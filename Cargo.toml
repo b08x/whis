@@ -1,12 +1,12 @@
 [package]
-name = "whisp"
+name = "whispo"
 version = "0.1.0"
 edition = "2024"
-authors = ["Frank Dierolf <frankdierolf@gmail.com>"]
+authors = ["Frank Dierolf <frank_dierolf@web.de>"]
 description = "Voice-to-text CLI for terminal users using OpenAI Whisper API"
 license = "MIT"
-repository = "https://github.com/frankdierolf/whisp"
-homepage = "https://github.com/frankdierolf/whisp"
+repository = "https://github.com/frankdierolf/whispo"
+homepage = "https://github.com/frankdierolf/whispo"
 keywords = ["voice", "transcription", "whisper", "cli", "audio"]
 categories = ["command-line-utilities", "multimedia::audio"]
 
