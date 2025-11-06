@@ -7,7 +7,7 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self> {
-        dotenv::dotenv().ok(); // Load .env file if it exists
+        dotenvy::dotenv().ok(); // Load .env file if it exists
 
         let openai_api_key = env::var("OPENAI_API_KEY")
             .context("OPENAI_API_KEY not found. Please set it in .env file or environment")?;
