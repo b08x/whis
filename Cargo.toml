@@ -2,6 +2,13 @@
 name = "whisp"
 version = "0.1.0"
 edition = "2024"
+authors = ["Frank Dierolf <frankdierolf@gmail.com>"]
+description = "Voice-to-text CLI for terminal users using OpenAI Whisper API"
+license = "MIT"
+repository = "https://github.com/frankdierolf/whisp"
+homepage = "https://github.com/frankdierolf/whisp"
+keywords = ["voice", "transcription", "whisper", "cli", "audio"]
+categories = ["command-line-utilities", "multimedia::audio"]
 
 [dependencies]
 cpal = "0.16"
