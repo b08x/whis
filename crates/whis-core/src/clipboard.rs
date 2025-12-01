@@ -8,16 +8,16 @@ fn is_flatpak() -> bool {
     std::path::Path::new("/.flatpak-info").exists()
 }
 
-/// Copy to clipboard using flatpak-spawn to access host's wl-copy
+/// Copy to clipboard using bundled wl-copy
 ///
+/// In Flatpak, we bundle wl-clipboard and call wl-copy directly.
 /// This is required because GNOME/Mutter does not implement the wlr-data-control
 /// Wayland protocol that arboard's wayland-data-control feature requires.
-fn copy_via_flatpak_spawn(text: &str) -> Result<()> {
-    let mut child = Command::new("flatpak-spawn")
-        .args(["--host", "wl-copy"])
+fn copy_via_wl_copy(text: &str) -> Result<()> {
+    let mut child = Command::new("wl-copy")
         .stdin(Stdio::piped())
         .spawn()
-        .context("Failed to spawn flatpak-spawn")?;
+        .context("Failed to spawn wl-copy")?;
 
     if let Some(mut stdin) = child.stdin.take() {
         stdin
@@ -34,10 +34,10 @@ fn copy_via_flatpak_spawn(text: &str) -> Result<()> {
 }
 
 pub fn copy_to_clipboard(text: &str) -> Result<()> {
-    // In Flatpak, use flatpak-spawn to call host's wl-copy.
+    // In Flatpak, use bundled wl-copy directly.
     // This is necessary because GNOME doesn't support wlr-data-control protocol.
     if is_flatpak() {
-        return copy_via_flatpak_spawn(text);
+        return copy_via_wl_copy(text);
     }
 
     // Standard approach for non-Flatpak environments
