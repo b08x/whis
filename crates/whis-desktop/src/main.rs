@@ -1,6 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    // Set app_id for Wayland - must be done BEFORE GTK init
+    // This is required for GNOME GlobalShortcuts portal to accept our requests
+    #[cfg(target_os = "linux")]
+    {
+        // Set the program name which GTK uses as app_id on Wayland
+        // Must match the .desktop file name (without extension)
+        gtk::glib::set_prgname(Some("ink.whis.Whis"));
+        gtk::glib::set_application_name("Whis");
+    }
+
     let args: Vec<String> = std::env::args().collect();
 
     // Handle --toggle command: send toggle to running instance and exit

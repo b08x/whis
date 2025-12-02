@@ -71,14 +71,24 @@ async function saveShortcut() {
   }
 }
 
-async function openConfigureDialog() {
+async function configureWithCapturedKey() {
+  if (props.currentShortcut === "Press keys..." || !props.currentShortcut) {
+    status.value = "Press a key combination first";
+    return;
+  }
+
   try {
-    status.value = "Opening...";
-    const newBinding = await invoke<string | null>('configure_shortcut');
+    status.value = "Configuring...";
+    const newBinding = await invoke<string | null>('configure_shortcut_with_trigger', {
+      trigger: props.currentShortcut
+    });
     if (newBinding) {
       emit('update:portalShortcut', newBinding);
+      status.value = "Configured!";
+    } else {
+      status.value = "Cancelled";
     }
-    status.value = "";
+    setTimeout(() => status.value = "", 2000);
   } catch (e) {
     status.value = "Failed: " + e;
   }
@@ -129,46 +139,51 @@ function stopRecording() {
     <div class="section-content">
       <!-- Portal backend (Wayland) -->
       <template v-if="backendInfo?.backend === 'PortalGlobalShortcuts'">
+        <p class="hint">Press keys below, then click Apply to bind the shortcut.</p>
 
-        <!-- Portal v2+: Configure button -->
-        <template v-if="backendInfo.portal_version >= 2">
-          <p class="hint">Managed by your desktop environment.</p>
-          <button @click="openConfigureDialog" class="btn">
-            Configure
-          </button>
-        </template>
-
-        <!-- Portal v1: Read-only -->
-        <template v-else>
-          <div class="notice">
-            <span class="notice-marker">[!]</span>
-            <p>Shortcuts are locked after first launch on GNOME {{ backendInfo.compositor.includes('47') ? '47' : '46' }}.</p>
-          </div>
-
-          <div class="field">
-            <label>current binding</label>
+        <div class="field">
+          <label>press to record</label>
+          <div
+            class="shortcut-input"
+            :class="{ recording: isRecording }"
+            @click="startRecording"
+            @blur="stopRecording"
+            @keydown="handleKeyDown"
+            tabindex="0"
+          >
             <div class="keys">
-              <span v-for="(key, index) in shortcutKeys" :key="index" class="key">{{ key }}</span>
+              <span
+                v-for="(key, index) in shortcutKeys"
+                :key="index"
+                class="key"
+                :class="{ placeholder: key === '...' }"
+              >{{ key }}</span>
             </div>
+            <span v-if="isRecording" class="recording-dot"></span>
           </div>
+        </div>
 
-          <div class="reset-info">
-            <label>to reset</label>
-            <div class="command" :class="{ copied }" @click="copyResetCommand">
-              <code>{{ resetCommand }}</code>
-              <button class="copy-btn" type="button">
-                <svg v-if="!copied" class="icon-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                </svg>
-                <svg v-else class="icon-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-              </button>
-            </div>
-            <p class="hint">Then restart Whis. GNOME 48+ allows direct configuration.</p>
+        <button @click="configureWithCapturedKey" class="btn" :disabled="isRecording || currentShortcut === 'Press keys...'">
+          Apply
+        </button>
+
+        <!-- Reset instructions for existing shortcuts -->
+        <div v-if="portalShortcut" class="reset-info">
+          <label>to reset existing shortcut</label>
+          <div class="command" :class="{ copied }" @click="copyResetCommand">
+            <code>{{ resetCommand }}</code>
+            <button class="copy-btn" type="button">
+              <svg v-if="!copied" class="icon-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              <svg v-else class="icon-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            </button>
           </div>
-        </template>
+          <p class="hint">Run this command and restart Whis to clear conflicts.</p>
+        </div>
       </template>
 
       <!-- CLI Fallback (Wayland without portal support) -->

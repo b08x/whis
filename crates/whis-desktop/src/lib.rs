@@ -32,6 +32,7 @@ pub fn run() {
             commands::save_settings,
             commands::get_shortcut_backend,
             commands::configure_shortcut,
+            commands::configure_shortcut_with_trigger,
             commands::get_portal_shortcut,
             commands::validate_api_key,
         ])

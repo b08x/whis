@@ -55,6 +55,18 @@ pub async fn configure_shortcut(app: AppHandle) -> Result<Option<String>, String
         .map_err(|e| e.to_string())
 }
 
+/// Configure shortcut with a preferred trigger from in-app key capture
+/// The trigger should be in human-readable format like "Ctrl+Shift+R"
+#[tauri::command]
+pub async fn configure_shortcut_with_trigger(
+    app: AppHandle,
+    trigger: String,
+) -> Result<Option<String>, String> {
+    crate::shortcuts::configure_with_preferred_trigger(Some(&trigger), app)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn get_portal_shortcut(state: State<'_, AppState>) -> Result<Option<String>, String> {
     // First check if we have it cached in state
