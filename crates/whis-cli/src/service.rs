@@ -7,7 +7,8 @@ use tokio::time::sleep;
 use crate::ipc::{IpcMessage, IpcResponse, IpcServer};
 use std::time::Duration;
 use whis_core::{
-    AudioRecorder, RecordingOutput, ApiConfig, copy_to_clipboard, parallel_transcribe, transcribe_audio,
+    ApiConfig, AudioRecorder, RecordingOutput, copy_to_clipboard, parallel_transcribe,
+    transcribe_audio,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]

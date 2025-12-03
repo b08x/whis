@@ -293,8 +293,8 @@ jobs:
           VERSION_TAG: ${{ needs.prepare.outputs.version_tag }}
         run: |
           cd aur-whis
-          git config user.email "github-actions@users.noreply.github.com"
-          git config user.name "GitHub Actions"
+          git config user.email "frank_dierolf@web.de"
+          git config user.name "Frank Dierolf - GithubActions"
           git add PKGBUILD .SRCINFO
           git commit -m "Update to $VERSION_TAG"
           GIT_SSH_COMMAND="ssh -i ~/.ssh/aur" git push

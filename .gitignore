@@ -31,3 +31,4 @@ build-dir/
 
 # Local release docs (contains machine-specific paths)
 RELEASING.md
+FUTURE.md

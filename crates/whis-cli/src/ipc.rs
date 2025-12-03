@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
+use interprocess::local_socket::{
+    GenericFilePath, ListenerNonblockingMode, ListenerOptions, ToFsName, prelude::*,
+};
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -19,47 +21,77 @@ pub enum IpcResponse {
     Error(String),
 }
 
-/// Get the socket path for IPC communication
-pub fn socket_path() -> PathBuf {
-    // Use XDG_RUNTIME_DIR if available, otherwise fall back to /tmp
-    let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
-    PathBuf::from(runtime_dir).join("whis.sock")
+/// Get the socket name for IPC communication
+#[cfg(unix)]
+fn socket_name() -> String {
+    std::env::var("XDG_RUNTIME_DIR")
+        .map(|dir| format!("{dir}/whis.sock"))
+        .unwrap_or_else(|_| "/tmp/whis.sock".to_string())
+}
+
+#[cfg(windows)]
+fn socket_name() -> String {
+    "whis".to_string()
 }
 
 /// Get the PID file path
 pub fn pid_file_path() -> PathBuf {
-    let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
-    PathBuf::from(runtime_dir).join("whis.pid")
+    #[cfg(unix)]
+    {
+        let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
+        PathBuf::from(runtime_dir).join("whis.pid")
+    }
+    #[cfg(windows)]
+    {
+        let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".to_string());
+        PathBuf::from(local_app_data).join("whis").join("whis.pid")
+    }
 }
 
 /// IPC Server for the background service
 pub struct IpcServer {
-    listener: UnixListener,
+    listener: LocalSocketListener,
+    #[cfg(unix)]
+    socket_path: PathBuf,
 }
 
 impl IpcServer {
     pub fn new() -> Result<Self> {
-        let socket_path = socket_path();
+        let name_str = socket_name();
 
-        // Remove old socket if it exists
+        // On Unix, save socket path for cleanup and remove old socket if it exists
+        #[cfg(unix)]
+        let socket_path = PathBuf::from(&name_str);
+        #[cfg(unix)]
         if socket_path.exists() {
             std::fs::remove_file(&socket_path).context("Failed to remove old socket file")?;
         }
 
-        let listener = UnixListener::bind(&socket_path).context("Failed to bind Unix socket")?;
+        let name = name_str
+            .to_fs_name::<GenericFilePath>()
+            .context("Failed to create socket name")?;
+
+        let listener = ListenerOptions::new()
+            .name(name)
+            .create_sync()
+            .context("Failed to create IPC listener")?;
 
         // Set non-blocking mode for the listener
         listener
-            .set_nonblocking(true)
+            .set_nonblocking(ListenerNonblockingMode::Both)
             .context("Failed to set non-blocking mode")?;
 
-        Ok(Self { listener })
+        Ok(Self {
+            listener,
+            #[cfg(unix)]
+            socket_path,
+        })
     }
 
     /// Try to accept a new connection (non-blocking)
     pub fn try_accept(&self) -> Result<Option<IpcConnection>> {
         match self.listener.accept() {
-            Ok((stream, _)) => Ok(Some(IpcConnection { stream })),
+            Ok(stream) => Ok(Some(IpcConnection { stream })),
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
             Err(e) => Err(e.into()),
         }
@@ -68,20 +100,24 @@ impl IpcServer {
 
 impl Drop for IpcServer {
     fn drop(&mut self) {
-        let path = socket_path();
-        let _ = std::fs::remove_file(path);
+        // On Unix, clean up the socket file
+        #[cfg(unix)]
+        {
+            let _ = std::fs::remove_file(&self.socket_path);
+        }
+        // On Windows, named pipes are cleaned up automatically by the OS
     }
 }
 
 /// IPC Connection for handling individual client connections
 pub struct IpcConnection {
-    stream: UnixStream,
+    stream: LocalSocketStream,
 }
 
 impl IpcConnection {
     /// Receive a message from the client
     pub fn receive(&mut self) -> Result<IpcMessage> {
-        let mut reader = BufReader::new(&self.stream);
+        let mut reader = BufReader::new(&mut self.stream);
         let mut line = String::new();
         reader
             .read_line(&mut line)
@@ -101,26 +137,42 @@ impl IpcConnection {
 
 /// IPC Client for sending commands to the background service
 pub struct IpcClient {
-    stream: UnixStream,
+    stream: LocalSocketStream,
 }
 
 impl IpcClient {
     pub fn connect() -> Result<Self> {
-        let path = socket_path();
+        let name_str = socket_name();
 
-        if !path.exists() {
-            anyhow::bail!(
-                "whis service is not running.\n\
-                Start it with: whis listen"
-            );
+        // On Unix, check if socket file exists first for better error messages
+        #[cfg(unix)]
+        {
+            let path = PathBuf::from(&name_str);
+            if !path.exists() {
+                anyhow::bail!(
+                    "whis service is not running.\n\
+                    Start it with: whis listen"
+                );
+            }
         }
 
-        let stream = UnixStream::connect(&path).with_context(|| {
-            // If socket exists but connection fails, it's likely stale
-            "Failed to connect to whis service.\n\
+        let name = name_str
+            .to_fs_name::<GenericFilePath>()
+            .context("Failed to create socket name")?;
+
+        let stream = LocalSocketStream::connect(name).with_context(|| {
+            #[cfg(unix)]
+            {
+                "Failed to connect to whis service.\n\
                 The service may have crashed. Try removing stale files:\n\
                   rm -f $XDG_RUNTIME_DIR/whis.*\n\
                 Then start the service again with: whis listen"
+            }
+            #[cfg(windows)]
+            {
+                "Failed to connect to whis service.\n\
+                The service may not be running. Start it with: whis listen"
+            }
         })?;
 
         Ok(Self { stream })
@@ -133,7 +185,7 @@ impl IpcClient {
         self.stream.flush().context("Failed to flush stream")?;
 
         // Receive response
-        let mut reader = BufReader::new(&self.stream);
+        let mut reader = BufReader::new(&mut self.stream);
         let mut line = String::new();
         reader
             .read_line(&mut line)
@@ -145,22 +197,35 @@ impl IpcClient {
 
 /// Check if the service is already running
 pub fn is_service_running() -> bool {
-    let path = socket_path();
+    let name_str = socket_name();
 
-    if !path.exists() {
+    // On Unix, check if socket file exists first
+    #[cfg(unix)]
+    let socket_path = PathBuf::from(&name_str);
+
+    #[cfg(unix)]
+    if !socket_path.exists() {
         return false;
     }
 
-    // Socket exists, but check if it's actually connectable
-    match UnixStream::connect(&path) {
+    // Try to connect to check if service is actually running
+    let name = match name_str.to_fs_name::<GenericFilePath>() {
+        Ok(n) => n,
+        Err(_) => return false,
+    };
+
+    match LocalSocketStream::connect(name) {
         Ok(_) => {
             // Successfully connected, service is running
             true
         }
         Err(_) => {
-            // Socket exists but can't connect - it's stale
-            // Clean up stale socket and PID files
-            let _ = std::fs::remove_file(&path);
+            // Can't connect - service is not running
+            // On Unix, clean up stale socket and PID files
+            #[cfg(unix)]
+            {
+                let _ = std::fs::remove_file(&socket_path);
+            }
             remove_pid_file();
             false
         }
@@ -170,6 +235,12 @@ pub fn is_service_running() -> bool {
 /// Write PID file
 pub fn write_pid_file() -> Result<()> {
     let path = pid_file_path();
+
+    // Ensure parent directory exists (needed for Windows)
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+
     let pid = std::process::id();
     std::fs::write(&path, pid.to_string()).context("Failed to write PID file")?;
     Ok(())

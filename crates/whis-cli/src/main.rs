@@ -1,8 +1,9 @@
-// Background service modules - only available on Linux
+// IPC module - cross-platform (uses interprocess crate)
+mod ipc;
+
+// Background service modules - only available on Linux (hotkey via rdev)
 #[cfg(target_os = "linux")]
 mod hotkey;
-#[cfg(target_os = "linux")]
-mod ipc;
 #[cfg(target_os = "linux")]
 mod service;
 
@@ -10,7 +11,8 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::io::{self, Write};
 use whis_core::{
-    AudioRecorder, RecordingOutput, ApiConfig, copy_to_clipboard, parallel_transcribe, transcribe_audio,
+    ApiConfig, AudioRecorder, RecordingOutput, copy_to_clipboard, parallel_transcribe,
+    transcribe_audio,
 };
 
 #[derive(Parser)]
@@ -240,7 +242,9 @@ fn load_api_config() -> Result<ApiConfig> {
     // Priority: settings file > environment variable
     let settings = Settings::load();
     if let Some(key) = settings.openai_api_key {
-        return Ok(ApiConfig { openai_api_key: key });
+        return Ok(ApiConfig {
+            openai_api_key: key,
+        });
     }
 
     // Fallback to environment
@@ -314,3 +318,9 @@ impl Drop for CleanupGuard {
         ipc::remove_pid_file();
     }
 }
+
+// Suppress unused warning for ipc module on non-Linux platforms
+// The module is cross-platform but the commands using it are still Linux-only
+#[cfg(not(target_os = "linux"))]
+#[allow(unused_imports)]
+use ipc as _;
