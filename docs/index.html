@@ -3,26 +3,41 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>whis | Voice-to-text for your terminal</title>
-  <meta name="description" content="Minimal voice-to-text CLI for terminal workflows. Speak. Paste. Ship.">
+  <title>whis | Voice-to-text for Linux</title>
+  <meta name="description" content="Voice-to-text for Linux. CLI for terminal workflows, Desktop app for system-wide access.">
   <meta name="keywords" content="voice-to-text, CLI, terminal, whisper, transcription, Linux">
   <meta name="author" content="Frank Dierolf">
 
   <!-- Open Graph -->
-  <meta property="og:title" content="whis | Voice-to-text for your terminal">
-  <meta property="og:description" content="Minimal voice-to-text CLI for terminal workflows. One command. That's it.">
+  <meta property="og:title" content="whis | Voice-to-text for Linux">
+  <meta property="og:description" content="Voice-to-text for Linux. CLI for terminal workflows, Desktop app for system-wide access.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://whis.ink">
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="whis | Voice-to-text for your terminal">
-  <meta name="twitter:description" content="Minimal voice-to-text CLI for terminal workflows. One command. That's it.">
+  <meta name="twitter:title" content="whis | Voice-to-text for Linux">
+  <meta name="twitter:description" content="Voice-to-text for Linux. CLI for terminal workflows, Desktop app for system-wide access.">
 
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <!-- Lightbox -->
+  <div data-component="lightbox" hidden>
+    <button data-slot="lightbox-close" aria-label="Close">&times;</button>
+    <button data-slot="lightbox-prev" aria-label="Previous">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="15 18 9 12 15 6"></polyline>
+      </svg>
+    </button>
+    <img data-slot="lightbox-img" src="" alt="">
+    <button data-slot="lightbox-next" aria-label="Next">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="9 18 15 12 9 6"></polyline>
+      </svg>
+    </button>
+  </div>
   <main data-page="whis">
     <div data-component="container">
 
@@ -40,6 +55,15 @@
           <a href="https://github.com/frankdierolf/whis" target="_blank" rel="noopener" data-slot="cta-secondary">GitHub</a>
         </div>
       </section>
+
+      <!-- Product Switcher -->
+      <div data-component="product-switcher">
+        <button data-slot="product" data-value="cli" aria-pressed="true">CLI</button>
+        <button data-slot="product" data-value="desktop" aria-pressed="false">Desktop</button>
+      </div>
+
+      <!-- CLI Content -->
+      <div data-product="cli">
 
       <!-- Install -->
       <section data-component="install" id="install">
@@ -135,6 +159,132 @@ export <span data-slot="var">OPENAI_API_KEY</span>=sk-...
 <span data-slot="comment"># 3. Press Enter to stop — text is copied!</span></code></pre>
       </section>
 
+      </div><!-- /CLI Content -->
+
+      <!-- Desktop Content -->
+      <div data-product="desktop" hidden>
+
+      <!-- Install -->
+      <section data-component="install" id="install-desktop">
+        <div data-component="tabs">
+          <div data-slot="tablist" role="tablist">
+            <button data-slot="tab" data-value="appimage" role="tab" aria-selected="true">AppImage</button>
+            <button data-slot="tab" data-value="deb" role="tab" aria-selected="false">deb</button>
+            <button data-slot="tab" data-value="rpm" role="tab" aria-selected="false">rpm</button>
+          </div>
+          <div data-slot="panels">
+            <div data-slot="panel" data-value="appimage" role="tabpanel">
+              <a href="https://github.com/frankdierolf/whis/releases/latest" target="_blank" rel="noopener" data-slot="download-link">
+                <code><span data-slot="prefix">Download </span><strong>Whis_*_amd64.AppImage</strong></code>
+                <span data-slot="download-hint">→ GitHub Releases</span>
+              </a>
+              <pre data-slot="install-cmd"><code>chmod +x Whis_*_amd64.AppImage && ./Whis_*_amd64.AppImage <span data-slot="highlight">--install</span></code></pre>
+              <p data-slot="install-note">Then launch "Whis" from your app menu. This enables global shortcuts.</p>
+            </div>
+            <div data-slot="panel" data-value="deb" role="tabpanel" hidden>
+              <a href="https://github.com/frankdierolf/whis/releases/latest" target="_blank" rel="noopener" data-slot="download-link">
+                <code><span data-slot="prefix">Download </span><strong>Whis_*_amd64.deb</strong></code>
+                <span data-slot="download-hint">→ GitHub Releases</span>
+              </a>
+              <pre data-slot="install-cmd"><code>sudo apt install ./Whis_*_amd64.deb</code></pre>
+            </div>
+            <div data-slot="panel" data-value="rpm" role="tabpanel" hidden>
+              <a href="https://github.com/frankdierolf/whis/releases/latest" target="_blank" rel="noopener" data-slot="download-link">
+                <code><span data-slot="prefix">Download </span><strong>Whis-*.x86_64.rpm</strong></code>
+                <span data-slot="download-hint">→ GitHub Releases</span>
+              </a>
+              <pre data-slot="install-cmd"><code>sudo dnf install ./Whis-*.x86_64.rpm</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Features -->
+      <section data-component="features">
+        <div data-slot="section-header">
+          <h2>What is Whis Desktop?</h2>
+          <p>A system tray app that brings voice-to-text to your entire desktop.</p>
+        </div>
+        <ul>
+          <li>
+            <span data-slot="marker">[*]</span>
+            <div><strong>System tray</strong> Lives in your panel, always ready</div>
+          </li>
+          <li>
+            <span data-slot="marker">[*]</span>
+            <div><strong>Global hotkey</strong> Ctrl+Shift+R from anywhere (configurable)</div>
+          </li>
+          <li>
+            <span data-slot="marker">[*]</span>
+            <div><strong>Whisper-powered</strong> Same OpenAI transcription engine</div>
+          </li>
+          <li>
+            <span data-slot="marker">[*]</span>
+            <div><strong>Wayland &amp; X11</strong> Works on modern Linux desktops</div>
+          </li>
+          <li>
+            <span data-slot="marker">[*]</span>
+            <div><strong>Auto-copied</strong> Text goes straight to your clipboard</div>
+          </li>
+        </ul>
+      </section>
+
+      <!-- Screenshots -->
+      <section data-component="demo">
+        <figure>
+          <div data-slot="carousel-wrapper">
+            <button data-slot="carousel-prev" aria-label="Previous screenshot">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+            </button>
+            <div data-slot="carousel">
+              <figure>
+                <img src="screenshot-tray.png" alt="Whis system tray icon on Linux desktop" loading="lazy">
+                <figcaption>System tray</figcaption>
+              </figure>
+              <figure>
+                <img src="screenshot-home.png" alt="Whis home screen with Start Recording button" loading="lazy">
+                <figcaption>Home</figcaption>
+              </figure>
+              <figure>
+                <img src="screenshot-shortcuts.png" alt="Global shortcut configuration" loading="lazy">
+                <figcaption>Shortcuts</figcaption>
+              </figure>
+              <figure>
+                <img src="screenshot-api-keys.png" alt="API key configuration" loading="lazy">
+                <figcaption>API Keys</figcaption>
+              </figure>
+              <figure>
+                <img src="screenshot-about.png" alt="About page with version info" loading="lazy">
+                <figcaption>About</figcaption>
+              </figure>
+            </div>
+            <button data-slot="carousel-next" aria-label="Next screenshot">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </button>
+          </div>
+        </figure>
+      </section>
+
+      <!-- Quick Start -->
+      <section data-component="quickstart">
+        <h2>Quick Start</h2>
+        <pre><code><span data-slot="comment"># 1. Download and install the AppImage</span>
+chmod +x <span data-slot="highlight">Whis_*_amd64.AppImage</span>
+./Whis_*_amd64.AppImage <span data-slot="highlight">--install</span>
+
+<span data-slot="comment"># 2. Launch "Whis" from your app menu</span>
+
+<span data-slot="comment"># 3. Click the tray icon → Settings → Add your API key</span>
+
+<span data-slot="comment"># 4. Use Ctrl+Shift+R or the tray menu to record!</span></code></pre>
+      </section>
+
+      </div><!-- /Desktop Content -->
+
       <!-- FAQ -->
       <section data-component="faq">
         <h2>FAQ</h2>
@@ -143,10 +293,20 @@ export <span data-slot="var">OPENAI_API_KEY</span>=sk-...
             <button data-slot="faq-question">
               <span data-slot="faq-icon-plus">+</span>
               <span data-slot="faq-icon-minus">&minus;</span>
+              <span>CLI or Desktop — which should I use?</span>
+            </button>
+            <div data-slot="faq-answer">
+              <p><strong>CLI</strong> if you live in the terminal and want voice-to-text in your shell workflow. <strong>Desktop</strong> if you want a system-wide hotkey that works from any app.</p>
+            </div>
+          </li>
+          <li data-component="faq-item" data-closed>
+            <button data-slot="faq-question">
+              <span data-slot="faq-icon-plus">+</span>
+              <span data-slot="faq-icon-minus">&minus;</span>
               <span>What do I need?</span>
             </button>
             <div data-slot="faq-answer">
-              <p>An OpenAI API key, FFmpeg, and a mic. That's the stack.</p>
+              <p>An OpenAI API key and a mic. The CLI also needs FFmpeg installed.</p>
             </div>
           </li>
           <li data-component="faq-item" data-closed>
@@ -177,6 +337,16 @@ export <span data-slot="var">OPENAI_API_KEY</span>=sk-...
             </button>
             <div data-slot="faq-answer">
               <p>Linux only for now. X11 and Wayland both work.</p>
+            </div>
+          </li>
+          <li data-component="faq-item" data-closed>
+            <button data-slot="faq-question">
+              <span data-slot="faq-icon-plus">+</span>
+              <span data-slot="faq-icon-minus">&minus;</span>
+              <span>How do I uninstall the AppImage?</span>
+            </button>
+            <div data-slot="faq-answer">
+              <p>Run <code>./Whis_*_amd64.AppImage --uninstall</code> to remove the desktop entry and icons. Then delete the AppImage file.</p>
             </div>
           </li>
           <li data-component="faq-item" data-closed>
@@ -253,6 +423,78 @@ export <span data-slot="var">OPENAI_API_KEY</span>=sk-...
           item.setAttribute('data-expanded', '');
         }
       });
+    });
+
+    // Product switcher
+    document.querySelectorAll('[data-slot="product"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const value = btn.dataset.value;
+
+        // Update button states
+        document.querySelectorAll('[data-slot="product"]').forEach(b => {
+          b.setAttribute('aria-pressed', b.dataset.value === value);
+        });
+
+        // Show/hide product content
+        document.querySelectorAll('[data-product]').forEach(content => {
+          content.hidden = content.dataset.product !== value;
+        });
+      });
+    });
+
+    // Carousel navigation
+    const carousel = document.querySelector('[data-slot="carousel"]');
+    const prevBtn = document.querySelector('[data-slot="carousel-prev"]');
+    const nextBtn = document.querySelector('[data-slot="carousel-next"]');
+
+    prevBtn?.addEventListener('click', () => {
+      carousel.scrollBy({ left: -carousel.offsetWidth, behavior: 'smooth' });
+    });
+
+    nextBtn?.addEventListener('click', () => {
+      carousel.scrollBy({ left: carousel.offsetWidth, behavior: 'smooth' });
+    });
+
+    // Lightbox
+    const lightbox = document.querySelector('[data-component="lightbox"]');
+    const lightboxImg = document.querySelector('[data-slot="lightbox-img"]');
+    const lightboxClose = document.querySelector('[data-slot="lightbox-close"]');
+    const lightboxPrev = document.querySelector('[data-slot="lightbox-prev"]');
+    const lightboxNext = document.querySelector('[data-slot="lightbox-next"]');
+    const carouselImages = carousel ? Array.from(carousel.querySelectorAll('img')) : [];
+    let currentIndex = 0;
+
+    function showImage(index) {
+      currentIndex = (index + carouselImages.length) % carouselImages.length;
+      lightboxImg.src = carouselImages[currentIndex].src;
+      lightboxImg.alt = carouselImages[currentIndex].alt;
+    }
+
+    carouselImages.forEach((img, index) => {
+      img.addEventListener('click', () => {
+        showImage(index);
+        lightbox.hidden = false;
+      });
+    });
+
+    lightboxPrev?.addEventListener('click', () => showImage(currentIndex - 1));
+    lightboxNext?.addEventListener('click', () => showImage(currentIndex + 1));
+
+    lightboxClose?.addEventListener('click', () => {
+      lightbox.hidden = true;
+    });
+
+    lightbox?.addEventListener('click', (e) => {
+      if (e.target === lightbox) {
+        lightbox.hidden = true;
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (lightbox.hidden) return;
+      if (e.key === 'Escape') lightbox.hidden = true;
+      if (e.key === 'ArrowLeft') showImage(currentIndex - 1);
+      if (e.key === 'ArrowRight') showImage(currentIndex + 1);
     });
   </script>
 </body>
