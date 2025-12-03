@@ -1,10 +1,6 @@
-// IPC module - cross-platform (uses interprocess crate)
-mod ipc;
-
-// Background service modules - only available on Linux (hotkey via rdev)
-#[cfg(target_os = "linux")]
+// Cross-platform modules
 mod hotkey;
-#[cfg(target_os = "linux")]
+mod ipc;
 mod service;
 
 use anyhow::Result;
@@ -28,7 +24,6 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Start the background service that listens for hotkey triggers
-    #[cfg(target_os = "linux")]
     Listen {
         /// Hotkey to trigger recording (e.g., "ctrl+shift+r")
         #[arg(short = 'k', long, default_value = "ctrl+shift+r")]
@@ -36,11 +31,9 @@ enum Commands {
     },
 
     /// Stop the background service
-    #[cfg(target_os = "linux")]
     Stop,
 
     /// Check service status
-    #[cfg(target_os = "linux")]
     Status,
 
     /// Configure settings (API key, etc.)
@@ -55,25 +48,27 @@ enum Commands {
     },
 }
 
+// ============================================================================
+// Linux: Use existing async main with rdev hotkey listener
+// ============================================================================
+
+#[cfg(target_os = "linux")]
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        #[cfg(target_os = "linux")]
-        Some(Commands::Listen { hotkey }) => run_listen(hotkey).await,
-        #[cfg(target_os = "linux")]
+        Some(Commands::Listen { hotkey }) => run_listen_linux(hotkey).await,
         Some(Commands::Stop) => run_stop(),
-        #[cfg(target_os = "linux")]
         Some(Commands::Status) => run_status(),
         Some(Commands::Config { api_key, show }) => run_config(api_key, show),
         None => run_record_once().await,
     }
 }
 
-/// Run the background service
+/// Run the background service (Linux - uses rdev)
 #[cfg(target_os = "linux")]
-async fn run_listen(hotkey_str: String) -> Result<()> {
+async fn run_listen_linux(hotkey_str: String) -> Result<()> {
     // Check if FFmpeg is available
     ensure_ffmpeg_installed()?;
 
@@ -99,7 +94,7 @@ async fn run_listen(hotkey_str: String) -> Result<()> {
     // Create channel for hotkey signals
     let (hotkey_tx, hotkey_rx) = std::sync::mpsc::channel();
 
-    // Spawn hotkey listener thread
+    // Spawn hotkey listener thread (rdev blocks)
     std::thread::spawn(move || {
         if let Err(e) = hotkey::listen_for_hotkey(hotkey, move || {
             let _ = hotkey_tx.send(());
@@ -127,8 +122,88 @@ async fn run_listen(hotkey_str: String) -> Result<()> {
     }
 }
 
+// ============================================================================
+// Windows/macOS: Sync main to create HotkeyManager on main thread (macOS requirement)
+// ============================================================================
+
+#[cfg(not(target_os = "linux"))]
+fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    match cli.command {
+        Some(Commands::Listen { hotkey }) => run_listen_non_linux(hotkey),
+        Some(Commands::Stop) => run_stop(),
+        Some(Commands::Status) => run_status(),
+        Some(Commands::Config { api_key, show }) => run_config(api_key, show),
+        None => tokio::runtime::Runtime::new()?.block_on(run_record_once()),
+    }
+}
+
+/// Run the background service (Windows/macOS - uses global-hotkey)
+#[cfg(not(target_os = "linux"))]
+fn run_listen_non_linux(hotkey_str: String) -> Result<()> {
+    // Check if FFmpeg is available
+    ensure_ffmpeg_installed()?;
+
+    // Check if service is already running
+    if ipc::is_service_running() {
+        eprintln!("Error: whis service is already running.");
+        eprintln!("Use 'whis stop' to stop the existing service first.");
+        std::process::exit(1);
+    }
+
+    // Load API configuration
+    let config = load_api_config()?;
+
+    // Write PID file
+    ipc::write_pid_file()?;
+
+    // Set up cleanup on exit
+    let _cleanup = CleanupGuard;
+
+    // CRITICAL: Create hotkey manager on main thread (required for macOS)
+    let manager = hotkey::HotkeyManager::new(&hotkey_str)?;
+    let receiver = manager.receiver().clone();
+    let hotkey_id = manager.hotkey_id;
+
+    println!("Hotkey registered: {hotkey_str}");
+
+    // Bridge global-hotkey events to mpsc channel for service
+    let (hotkey_tx, hotkey_rx) = std::sync::mpsc::channel();
+
+    std::thread::spawn(move || {
+        // Keep manager alive in this thread
+        let _manager = manager;
+
+        loop {
+            // Blocking receive from global-hotkey
+            if let Ok(event) = receiver.recv() {
+                if event.id() == hotkey_id {
+                    let _ = hotkey_tx.send(());
+                }
+            }
+        }
+    });
+
+    // Run async service in tokio runtime
+    tokio::runtime::Runtime::new()?.block_on(async {
+        let service = service::Service::new(config)?;
+
+        tokio::select! {
+            result = service.run(Some(hotkey_rx)) => result,
+            _ = tokio::signal::ctrl_c() => {
+                println!("\nShutting down...");
+                Ok(())
+            }
+        }
+    })
+}
+
+// ============================================================================
+// Shared functions (all platforms)
+// ============================================================================
+
 /// Stop the service
-#[cfg(target_os = "linux")]
 fn run_stop() -> Result<()> {
     let mut client = ipc::IpcClient::connect()?;
     let _ = client.send_message(ipc::IpcMessage::Stop)?;
@@ -137,7 +212,6 @@ fn run_stop() -> Result<()> {
 }
 
 /// Check service status
-#[cfg(target_os = "linux")]
 fn run_status() -> Result<()> {
     if !ipc::is_service_running() {
         println!("Status: Not running");
@@ -230,6 +304,7 @@ fn ensure_ffmpeg_installed() -> Result<()> {
         eprintln!("Please install FFmpeg:");
         eprintln!("  - Ubuntu/Debian: sudo apt install ffmpeg");
         eprintln!("  - macOS: brew install ffmpeg");
+        eprintln!("  - Windows: choco install ffmpeg or download from ffmpeg.org");
         eprintln!("  - Or visit: https://ffmpeg.org/download.html\n");
         std::process::exit(1);
     }
@@ -309,18 +384,10 @@ fn wait_for_enter() -> Result<()> {
 }
 
 /// Guard to clean up PID and socket files on exit
-#[cfg(target_os = "linux")]
 struct CleanupGuard;
 
-#[cfg(target_os = "linux")]
 impl Drop for CleanupGuard {
     fn drop(&mut self) {
         ipc::remove_pid_file();
     }
 }
-
-// Suppress unused warning for ipc module on non-Linux platforms
-// The module is cross-platform but the commands using it are still Linux-only
-#[cfg(not(target_os = "linux"))]
-#[allow(unused_imports)]
-use ipc as _;
