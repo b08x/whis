@@ -25,6 +25,7 @@ concurrency:
 
 jobs:
   prepare:
+    name: Prepare
     runs-on: ubuntu-latest
     outputs:
       version_tag: ${{ steps.version.outputs.tag }}
@@ -40,6 +41,7 @@ jobs:
           echo "Using version tag: $(cat $GITHUB_OUTPUT | grep tag | cut -d= -f2)"
 
   publish-crates:
+    name: Publish to crates.io
     needs: [prepare]
     runs-on: ubuntu-latest
     env:
@@ -72,6 +74,7 @@ jobs:
           cargo publish -p whis --token ${{ secrets.CARGO_REGISTRY_TOKEN }} || true
 
   build-linux-x86:
+    name: "CLI: Linux x86_64"
     needs: [prepare]
     runs-on: ubuntu-latest
     steps:
@@ -102,6 +105,7 @@ jobs:
           path: dist/whis-*.tar.gz
 
   build-linux-arm64:
+    name: "CLI: Linux ARM64"
     needs: [prepare]
     runs-on: ubuntu-latest
     steps:
@@ -130,6 +134,7 @@ jobs:
           path: dist/whis-*.tar.gz
 
   build-macos:
+    name: "CLI: macOS ${{ matrix.target == 'x86_64-apple-darwin' && 'Intel' || 'Apple Silicon' }}"
     needs: [prepare]
     runs-on: macos-latest
     strategy:
@@ -162,6 +167,7 @@ jobs:
           path: dist/whis-*.tar.gz
 
   build-windows:
+    name: "CLI: Windows"
     needs: [prepare]
     runs-on: windows-latest
     steps:
@@ -187,6 +193,7 @@ jobs:
           path: dist/whis-*.zip
 
   build-desktop-linux:
+    name: "Desktop: Linux"
     needs: [prepare]
     runs-on: ubuntu-22.04
     steps:
@@ -240,6 +247,7 @@ jobs:
           path: target/release/bundle/rpm/*.rpm
 
   release:
+    name: Create Release
     needs: [prepare, build-linux-x86, build-linux-arm64, build-macos, build-windows, build-desktop-linux]
     runs-on: ubuntu-latest
     permissions:
@@ -281,6 +289,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish-aur:
+    name: Publish to AUR
     needs: [prepare, release]
     runs-on: ubuntu-latest
     steps:
