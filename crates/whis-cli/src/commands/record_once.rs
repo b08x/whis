@@ -1,12 +1,24 @@
 use anyhow::Result;
 use std::io::{self, Write};
 use whis_core::{
-    AudioRecorder, Polisher, RecordingOutput, Settings, copy_to_clipboard,
+    AudioRecorder, OutputStyle, Polisher, RecordingOutput, Settings, copy_to_clipboard,
     parallel_transcribe, polish, transcribe_audio, DEFAULT_POLISH_PROMPT,
 };
 use crate::app;
 
-pub fn run(polish_flag: bool) -> Result<()> {
+pub fn run(polish_flag: bool, style: Option<String>) -> Result<()> {
+    // Parse style if provided
+    let style: Option<OutputStyle> = if let Some(style_name) = style {
+        match style_name.parse() {
+            Ok(s) => Some(s),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        None
+    };
     // Create Tokio runtime for async operations
     let runtime = tokio::runtime::Runtime::new()?;
 
@@ -72,14 +84,14 @@ pub fn run(polish_flag: bool) -> Result<()> {
         }
     };
 
-    // Apply polishing if enabled (via flag or settings)
+    // Apply polishing if enabled (via flag, style, or settings)
     let settings = Settings::load();
-    let should_polish = polish_flag || settings.polisher != Polisher::None;
+    let should_polish = polish_flag || style.is_some() || settings.polisher != Polisher::None;
 
     let final_text = if should_polish {
         // Determine which polisher to use
-        let polisher = if polish_flag && settings.polisher == Polisher::None {
-            // Flag enabled but no polisher configured - use transcription provider
+        let polisher = if (polish_flag || style.is_some()) && settings.polisher == Polisher::None {
+            // Flag/style enabled but no polisher configured - use transcription provider
             match config.provider {
                 whis_core::TranscriptionProvider::OpenAI => Polisher::OpenAI,
                 whis_core::TranscriptionProvider::Mistral => Polisher::Mistral,
@@ -105,10 +117,15 @@ pub fn run(polish_flag: bool) -> Result<()> {
             print!("Polishing...");
             io::stdout().flush()?;
 
-            let prompt = settings
-                .polish_prompt
-                .as_deref()
-                .unwrap_or(DEFAULT_POLISH_PROMPT);
+            // Priority: style prompt > settings prompt > default
+            let prompt = if let Some(ref s) = style {
+                s.prompt()
+            } else {
+                settings
+                    .polish_prompt
+                    .as_deref()
+                    .unwrap_or(DEFAULT_POLISH_PROMPT)
+            };
 
             match runtime.block_on(polish(&transcription, &polisher, &api_key, prompt)) {
                 Ok(polished) => {

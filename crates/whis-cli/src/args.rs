@@ -12,6 +12,10 @@ pub struct Cli {
     /// Polish transcript with LLM (cleanup grammar, filler words)
     #[arg(long)]
     pub polish: bool,
+
+    /// Output style for transcript [possible values: ai-prompt, email, notes]
+    #[arg(long = "as", value_name = "STYLE")]
+    pub style: Option<String>,
 }
 
 #[derive(Subcommand)]
