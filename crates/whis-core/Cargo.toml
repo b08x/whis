@@ -11,9 +11,20 @@ anyhow.workspace = true
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-reqwest = { workspace = true, features = ["blocking", "multipart"] }
+reqwest = { workspace = true, features = ["blocking", "multipart", "json"] }
 cpal.workspace = true
-hound.workspace = true
-arboard.workspace = true
+hound = { workspace = true, optional = true }
+arboard = { workspace = true, optional = true }
 dotenvy.workspace = true
 dirs = "5"
+
+# Embedded MP3 encoder for mobile (no FFmpeg dependency)
+mp3lame-encoder = { version = "0.2", optional = true }
+
+[features]
+default = ["ffmpeg", "clipboard"]
+# Desktop: use FFmpeg process for audio encoding and arboard for clipboard
+ffmpeg = ["hound"]
+clipboard = ["arboard"]
+# Mobile: use embedded mp3lame encoder (no external process needed)
+embedded-encoder = ["mp3lame-encoder"]

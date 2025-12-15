@@ -10,7 +10,7 @@ description = "Whis voice-to-text desktop application"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-whis-core.workspace = true
+whis-core = { workspace = true, features = ["ffmpeg", "clipboard"] }
 anyhow.workspace = true
 tokio.workspace = true
 serde.workspace = true

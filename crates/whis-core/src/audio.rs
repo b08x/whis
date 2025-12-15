@@ -194,8 +194,25 @@ impl RecordingData {
         Ok(RecordingOutput::Chunked(chunks))
     }
 
-    /// Convert raw f32 samples to MP3 data
+    /// Convert raw f32 samples to MP3 data using FFmpeg (desktop) or embedded encoder (mobile)
+    #[cfg(feature = "ffmpeg")]
     fn samples_to_mp3(&self, samples: &[f32], suffix: &str) -> Result<Vec<u8>> {
+        self.samples_to_mp3_ffmpeg(samples, suffix)
+    }
+
+    #[cfg(all(feature = "embedded-encoder", not(feature = "ffmpeg")))]
+    fn samples_to_mp3(&self, samples: &[f32], _suffix: &str) -> Result<Vec<u8>> {
+        self.samples_to_mp3_embedded(samples)
+    }
+
+    #[cfg(not(any(feature = "ffmpeg", feature = "embedded-encoder")))]
+    fn samples_to_mp3(&self, _samples: &[f32], _suffix: &str) -> Result<Vec<u8>> {
+        anyhow::bail!("No MP3 encoder available. Enable either 'ffmpeg' or 'embedded-encoder' feature.")
+    }
+
+    /// Convert samples to MP3 using FFmpeg process (desktop)
+    #[cfg(feature = "ffmpeg")]
+    fn samples_to_mp3_ffmpeg(&self, samples: &[f32], suffix: &str) -> Result<Vec<u8>> {
         // Convert f32 samples to i16 for WAV format
         let i16_samples: Vec<i16> = samples
             .iter()
@@ -265,6 +282,74 @@ impl RecordingData {
 
         // Clean up the temporary MP3 file
         let _ = std::fs::remove_file(&mp3_path);
+
+        Ok(mp3_data)
+    }
+
+    /// Convert samples to MP3 using embedded LAME encoder (mobile)
+    #[cfg(feature = "embedded-encoder")]
+    #[allow(dead_code)] // Used only when ffmpeg feature is disabled
+    fn samples_to_mp3_embedded(&self, samples: &[f32]) -> Result<Vec<u8>> {
+        use mp3lame_encoder::{Builder, FlushNoGap, InterleavedPcm, MonoPcm};
+
+        // Convert f32 samples to i16
+        let i16_samples: Vec<i16> = samples
+            .iter()
+            .map(|&s| {
+                let clamped = s.clamp(-1.0, 1.0);
+                (clamped * i16::MAX as f32) as i16
+            })
+            .collect();
+
+        // Build the encoder
+        let mut builder = Builder::new().context("Failed to create LAME builder")?;
+        builder
+            .set_num_channels(self.channels as u8)
+            .map_err(|e| anyhow::anyhow!("Failed to set channels: {:?}", e))?;
+        builder
+            .set_sample_rate(self.sample_rate)
+            .map_err(|e| anyhow::anyhow!("Failed to set sample rate: {:?}", e))?;
+        builder
+            .set_brate(mp3lame_encoder::Bitrate::Kbps128)
+            .map_err(|e| anyhow::anyhow!("Failed to set bitrate: {:?}", e))?;
+        builder
+            .set_quality(mp3lame_encoder::Quality::Best)
+            .map_err(|e| anyhow::anyhow!("Failed to set quality: {:?}", e))?;
+
+        let mut encoder = builder.build().map_err(|e| anyhow::anyhow!("Failed to initialize LAME encoder: {:?}", e))?;
+
+        // Prepare output buffer
+        let mut mp3_data = Vec::new();
+        let max_size = mp3lame_encoder::max_required_buffer_size(i16_samples.len());
+        mp3_data.reserve(max_size);
+
+        // Encode based on channel count
+        let encoded_size = if self.channels == 1 {
+            let input = MonoPcm(&i16_samples);
+            encoder
+                .encode(input, mp3_data.spare_capacity_mut())
+                .map_err(|e| anyhow::anyhow!("Failed to encode MP3: {:?}", e))?
+        } else {
+            let input = InterleavedPcm(&i16_samples);
+            encoder
+                .encode(input, mp3_data.spare_capacity_mut())
+                .map_err(|e| anyhow::anyhow!("Failed to encode MP3: {:?}", e))?
+        };
+
+        // SAFETY: encoder.encode returns the number of bytes written
+        unsafe {
+            mp3_data.set_len(encoded_size);
+        }
+
+        // Flush remaining data
+        let flush_size = encoder
+            .flush::<FlushNoGap>(mp3_data.spare_capacity_mut())
+            .map_err(|e| anyhow::anyhow!("Failed to flush MP3 encoder: {:?}", e))?;
+
+        // SAFETY: flush returns the number of bytes written
+        unsafe {
+            mp3_data.set_len(mp3_data.len() + flush_size);
+        }
 
         Ok(mp3_data)
     }

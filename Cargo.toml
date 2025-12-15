@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/whis-core", "crates/whis-cli", "crates/whis-desktop"]
+members = ["crates/whis-core", "crates/whis-cli", "crates/whis-desktop", "crates/whis-mobile"]
 
 [workspace.package]
 version = "0.5.9"
@@ -25,7 +25,7 @@ rdev = { version = "0.5", features = ["unstable_grab"] }
 global-hotkey = "0.7"
 crossbeam-channel = "0.5"
 interprocess = "2"
-whis-core = { path = "crates/whis-core", version = "0.5.9" }
+whis-core = { path = "crates/whis-core", version = "0.5.9", default-features = false }
 
 [workspace.metadata.cross.target.aarch64-unknown-linux-gnu]
 pre-build = [

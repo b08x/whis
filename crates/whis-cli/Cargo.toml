@@ -15,7 +15,7 @@ name = "whis"
 path = "src/main.rs"
 
 [dependencies]
-whis-core.workspace = true
+whis-core = { workspace = true, features = ["ffmpeg", "clipboard"] }
 anyhow.workspace = true
 tokio.workspace = true
 serde.workspace = true
