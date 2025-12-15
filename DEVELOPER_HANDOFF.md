@@ -3,7 +3,7 @@
 *Strategic context, competitive analysis, and implementation roadmap*
 
 **Last Updated:** December 2024
-**Status:** Phases 1-2 complete (Polish + Output Styles)
+**Status:** Phases 1-3 complete (Polish + Presets)
 **Fact-Checked:** December 2024
 
 ---
@@ -372,7 +372,7 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 | Windows Support | ✅ | Beta | ❌ | Partial | In development |
 | LLM Post-Process | ✅ | ✅ | ✅ | ✅ | **Done** |
 | Output Styles | Limited | ✅ | ✅ | ✅ | **Done** (`--as`) |
-| Custom Modes | Limited | ✅ | ✅ | ❌ | **Next** |
+| Custom Presets | Limited | ✅ | ✅ | ✅ | **Done** (`whis presets`) |
 | Backtrack Detection | ✅ | Via prompt | Via prompt | Via prompt | In default prompts |
 | BYOK | ❌ | ✅ | ✅ | ✅ | Already have |
 | Local Transcription | ❌ | ✅ | ✅ | ❌ | Future |
@@ -398,7 +398,7 @@ The existing multi-provider architecture (OpenAI + Mistral) means the foundation
 | Feature | Implementation |
 |---------|----------------|
 | **Core module** | `crates/whis-core/src/polish.rs` |
-| **Output styles** | `crates/whis-core/src/output_style.rs` |
+| **Presets** | `crates/whis-core/src/preset.rs` |
 | **CLI flags** | `--polish`, `--as <STYLE>` |
 | **Config options** | `--polisher`, `--polish-prompt` |
 | **Models** | gpt-5-nano-2025-08-07, mistral-small-latest |
@@ -646,7 +646,12 @@ whis config --polisher openai    # Always polish (none/openai/mistral)
 whis config --polish-prompt "Custom prompt here"
 
 # View config
-whis config --show               # Shows polisher, prompt, available styles
+whis config --show               # Shows polisher, prompt, available presets
+
+# Preset management
+whis presets                     # List all presets
+whis presets show notes          # Show preset details
+whis presets new my-preset       # Print JSON template
 ```
 
 ---
@@ -730,45 +735,43 @@ whis config --polisher openai  # Enable by default
 
 ## Future Roadmap
 
-### Priority 1: Modes System (High Impact, Medium Effort) — NEXT
+### ~~Priority 1: Presets System~~ — ✅ COMPLETE
 
 **Why:** Superwhisper's killer feature. Different contexts need different polishing.
 
-**Implementation:**
+**What Was Implemented:**
 
-1. **Modes directory:** `~/.config/whis/modes/`
-   ```
-   modes/
-   ├── default.json      # No polishing
-   ├── prompt.json       # Clean for AI prompts
-   ├── email.json        # Formal, professional
-   ├── code.json         # Preserve technical terms
-   └── braindump.json    # Summarize & extract action items
-   ```
+1. **Presets directory:** `~/.config/whis/presets/`
+   - User presets stored as JSON files
+   - User presets override built-in presets of the same name
+   - Filename is canonical (internal `name` field ignored)
 
-2. **Mode schema:**
+2. **Preset schema:**
    ```json
    {
-     "name": "prompt",
      "description": "Clean transcript for AI prompts",
+     "prompt": "Clean up this voice transcript...",
      "polisher": "openai",
-     "system_prompt": "Clean up this voice transcript for use as an AI prompt. Remove filler words, fix grammar, but preserve the user's intent and technical terminology.",
      "model": "gpt-5-nano-2025-08-07"
    }
    ```
+   - `description`, `prompt`: Required
+   - `polisher`, `model`: Optional overrides
 
-3. **CLI usage:**
+3. **Built-in presets:** `ai-prompt`, `email`, `notes`
+
+4. **CLI usage:**
    ```bash
-   whis --mode prompt          # Use prompt mode
-   whis --mode braindump       # Summarize rambling thoughts
-   whis config --default-mode prompt
-   whis modes list             # Show available modes
-   whis modes create           # Interactive mode creation
+   whis --as notes             # Use preset
+   whis --as my-custom         # User preset from ~/.config/whis/presets/my-custom.json
+   whis presets                # List all presets
+   whis presets show notes     # Show preset details
+   whis presets new my-preset  # Print JSON template
    ```
 
-4. **Desktop integration:**
-   - Mode selector in settings UI
-   - Quick mode switch in tray menu
+5. **Key files:**
+   - `crates/whis-core/src/preset.rs` — Core preset module
+   - `crates/whis-cli/src/commands/presets.rs` — CLI subcommand
 
 ---
 
@@ -791,7 +794,7 @@ whis --as email           # Concise, professional
 whis --as notes           # Light cleanup, natural voice
 ```
 
-See `output_style.rs` for implementation.
+See `preset.rs` for implementation.
 
 ---
 
@@ -843,7 +846,7 @@ mode: braindump
 |-------|---------|--------|--------|--------|
 | **1** | LLM Post-Processing | Medium | High | ✅ Done |
 | **2** | Output Styles (`--as`) | Low | High | ✅ Done |
-| **3** | Modes System | Medium | High | **Next** |
+| **3** | Presets System | Medium | High | ✅ Done |
 | **4** | Output Formats | Low | Medium | Future |
 | **5** | Local Transcription | High | Medium | Future |
 
@@ -883,11 +886,11 @@ Future:   Audio → Transcribe → [Polish] → [Format] → Clipboard
                                Mode file   --output format
 ```
 
-The `Polisher` enum mirrors the `TranscriptionProvider` pattern. The `OutputStyle` enum provides predefined polish prompts.
+The `Polisher` enum mirrors the `TranscriptionProvider` pattern. The `Preset` struct (with `PresetSource` enum) provides user-configurable polish prompts.
 
 ---
 
-*Document updated December 2024. Phases 1-2 complete. Next: Modes System.*
+*Document updated December 2024. Phases 1-3 complete. Next: Output Formats.*
 
 ---
 
