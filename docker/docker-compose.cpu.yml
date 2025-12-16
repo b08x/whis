@@ -1,0 +1,39 @@
+# Whis Self-Hosted Stack (CPU-only)
+#
+# Provides local transcription and polishing without GPU.
+# Slower than GPU version but works on any machine.
+#
+# Usage:
+#   docker compose -f docker-compose.cpu.yml up -d
+#   docker exec -it whis-ollama-1 ollama pull phi3
+#
+# Configure whis:
+#   whis config --provider remote-whisper
+#   whis config --remote-whisper-url http://localhost:8765
+#   whis config --polisher ollama
+
+services:
+  whisper:
+    image: fedirz/faster-whisper-server:latest
+    container_name: whis-whisper
+    ports:
+      - "8765:8000"
+    environment:
+      # Use smaller model for CPU (tiny or base recommended)
+      - WHISPER__MODEL=Systran/faster-whisper-tiny
+      - WHISPER__INFERENCE_DEVICE=cpu
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: whis-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    restart: unless-stopped
+
+volumes:
+  ollama_data:

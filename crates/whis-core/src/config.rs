@@ -11,6 +11,10 @@ pub enum TranscriptionProvider {
     Groq,
     Deepgram,
     ElevenLabs,
+    #[serde(rename = "local-whisper")]
+    LocalWhisper,
+    #[serde(rename = "remote-whisper")]
+    RemoteWhisper,
 }
 
 impl TranscriptionProvider {
@@ -22,10 +26,12 @@ impl TranscriptionProvider {
             TranscriptionProvider::Groq => "groq",
             TranscriptionProvider::Deepgram => "deepgram",
             TranscriptionProvider::ElevenLabs => "elevenlabs",
+            TranscriptionProvider::LocalWhisper => "local-whisper",
+            TranscriptionProvider::RemoteWhisper => "remote-whisper",
         }
     }
 
-    /// Get the environment variable name for this provider's API key
+    /// Get the environment variable name for this provider's API key (or path/URL for local)
     pub fn api_key_env_var(&self) -> &'static str {
         match self {
             TranscriptionProvider::OpenAI => "OPENAI_API_KEY",
@@ -33,6 +39,8 @@ impl TranscriptionProvider {
             TranscriptionProvider::Groq => "GROQ_API_KEY",
             TranscriptionProvider::Deepgram => "DEEPGRAM_API_KEY",
             TranscriptionProvider::ElevenLabs => "ELEVENLABS_API_KEY",
+            TranscriptionProvider::LocalWhisper => "LOCAL_WHISPER_MODEL_PATH",
+            TranscriptionProvider::RemoteWhisper => "REMOTE_WHISPER_URL",
         }
     }
 
@@ -44,6 +52,8 @@ impl TranscriptionProvider {
             TranscriptionProvider::Groq,
             TranscriptionProvider::Deepgram,
             TranscriptionProvider::ElevenLabs,
+            TranscriptionProvider::LocalWhisper,
+            TranscriptionProvider::RemoteWhisper,
         ]
     }
 
@@ -55,7 +65,17 @@ impl TranscriptionProvider {
             TranscriptionProvider::Groq => "Groq",
             TranscriptionProvider::Deepgram => "Deepgram",
             TranscriptionProvider::ElevenLabs => "ElevenLabs",
+            TranscriptionProvider::LocalWhisper => "Local Whisper",
+            TranscriptionProvider::RemoteWhisper => "Remote Whisper",
         }
+    }
+
+    /// Whether this provider requires an API key (vs path/URL for local/remote)
+    pub fn requires_api_key(&self) -> bool {
+        !matches!(
+            self,
+            TranscriptionProvider::LocalWhisper | TranscriptionProvider::RemoteWhisper
+        )
     }
 }
 
@@ -75,8 +95,10 @@ impl std::str::FromStr for TranscriptionProvider {
             "groq" => Ok(TranscriptionProvider::Groq),
             "deepgram" => Ok(TranscriptionProvider::Deepgram),
             "elevenlabs" => Ok(TranscriptionProvider::ElevenLabs),
+            "local-whisper" | "localwhisper" | "whisper" => Ok(TranscriptionProvider::LocalWhisper),
+            "remote-whisper" | "remotewhisper" => Ok(TranscriptionProvider::RemoteWhisper),
             _ => Err(format!(
-                "Unknown provider: {}. Available: openai, mistral, groq, deepgram, elevenlabs",
+                "Unknown provider: {}. Available: openai, mistral, groq, deepgram, elevenlabs, local-whisper, remote-whisper",
                 s
             )),
         }

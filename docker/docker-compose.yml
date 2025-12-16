@@ -1,0 +1,54 @@
+# Whis Self-Hosted Stack (GPU)
+#
+# Provides local transcription and polishing with GPU acceleration.
+# Requires: Docker with NVIDIA Container Toolkit
+#
+# Usage:
+#   docker compose up -d
+#   docker exec -it whis-ollama-1 ollama pull phi3
+#
+# Configure whis:
+#   whis config --provider remote-whisper
+#   whis config --remote-whisper-url http://localhost:8765
+#   whis config --polisher ollama
+
+services:
+  whisper:
+    image: fedirz/faster-whisper-server:latest-cuda
+    container_name: whis-whisper
+    ports:
+      - "8765:8000"
+    environment:
+      # Model options: tiny, base, small, medium, large-v3
+      # See: https://huggingface.co/Systran
+      - WHISPER__MODEL=Systran/faster-whisper-small
+      - WHISPER__INFERENCE_DEVICE=cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: whis-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  ollama_data:

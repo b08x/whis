@@ -22,10 +22,17 @@ async-trait = "0.1"
 # Embedded MP3 encoder for mobile (no FFmpeg dependency)
 mp3lame-encoder = { version = "0.2", optional = true }
 
+# Local transcription (optional)
+whisper-rs = { version = "0.15", optional = true }
+rubato = { version = "0.15", optional = true }
+minimp3 = { version = "0.5", optional = true }
+
 [features]
-default = ["ffmpeg", "clipboard"]
+default = ["ffmpeg", "clipboard", "local-whisper"]
 # Desktop: use FFmpeg process for audio encoding and arboard for clipboard
 ffmpeg = ["hound"]
 clipboard = ["arboard"]
 # Mobile: use embedded mp3lame encoder (no external process needed)
 embedded-encoder = ["mp3lame-encoder"]
+# Local whisper.cpp transcription (requires model download)
+local-whisper = ["whisper-rs", "rubato", "minimp3"]
