@@ -72,7 +72,7 @@ pub enum Commands {
         #[arg(long)]
         ollama_url: Option<String>,
 
-        /// Ollama model name for local polishing (default: phi3)
+        /// Ollama model name for local polishing (default: ministral-3:3b)
         #[arg(long)]
         ollama_model: Option<String>,
 
@@ -103,6 +103,12 @@ pub enum Commands {
     Setup {
         #[command(subcommand)]
         mode: SetupMode,
+    },
+
+    /// List available models (whisper, ollama)
+    Models {
+        #[command(subcommand)]
+        action: Option<ModelsAction>,
     },
 }
 
@@ -146,5 +152,18 @@ pub enum PresetsAction {
         /// Name of the preset to edit (creates if doesn't exist)
         #[arg(value_hint = ValueHint::Other)]
         name: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ModelsAction {
+    /// List available whisper models with install status (default)
+    Whisper,
+
+    /// List available Ollama models from server
+    Ollama {
+        /// Ollama server URL (default: http://localhost:11434)
+        #[arg(long)]
+        url: Option<String>,
     },
 }

@@ -85,7 +85,8 @@ pub fn run(polish_flag: bool, preset_name: Option<String>) -> Result<()> {
     let mut recorder = AudioRecorder::new()?;
     recorder.start_recording()?;
 
-    print!("Recording... (press Enter to stop)");
+    println!("Press Enter to stop recording");
+    print!("Recording...");
     io::stdout().flush()?;
     app::wait_for_enter()?;
 
@@ -93,12 +94,11 @@ pub fn run(polish_flag: bool, preset_name: Option<String>) -> Result<()> {
     let audio_result = recorder.finalize_recording()?;
 
     // Transcribe based on output type
+    // Continue on same line (raw mode doesn't echo newline)
+    app::typewriter(" Transcribing...", 25);
     let transcription = match audio_result {
         RecordingOutput::Single(audio_data) => {
             // Small file - simple transcription
-            print!("\rTranscribing...                        \n");
-            io::stdout().flush()?;
-
             transcribe_audio(
                 &config.provider,
                 &config.api_key,
@@ -108,9 +108,6 @@ pub fn run(polish_flag: bool, preset_name: Option<String>) -> Result<()> {
         }
         RecordingOutput::Chunked(chunks) => {
             // Large file - parallel transcription
-            print!("\rTranscribing...                        \n");
-            io::stdout().flush()?;
-
             runtime.block_on(parallel_transcribe(
                 &config.provider,
                 &config.api_key,
@@ -121,9 +118,9 @@ pub fn run(polish_flag: bool, preset_name: Option<String>) -> Result<()> {
         }
     };
 
-    // Apply polishing if enabled (via flag, preset, or settings)
+    // Apply polishing if enabled (via flag or preset)
     let settings = Settings::load();
-    let should_polish = polish_flag || preset.is_some() || settings.polisher != Polisher::None;
+    let should_polish = polish_flag || preset.is_some();
 
     let final_text = if should_polish {
         let polisher = resolve_polisher(&preset, &settings, &config.provider);
@@ -157,8 +154,7 @@ pub fn run(polish_flag: bool, preset_name: Option<String>) -> Result<()> {
         };
 
         if let Some(key_or_url) = api_key_or_url {
-            print!("Polishing...");
-            io::stdout().flush()?;
+            app::typewriter(" Polishing...", 25);
 
             // Priority: preset prompt > settings prompt > default
             let prompt = if let Some(ref p) = preset {
@@ -186,13 +182,9 @@ pub fn run(polish_flag: bool, preset_name: Option<String>) -> Result<()> {
                 prompt,
                 model,
             )) {
-                Ok(polished) => {
-                    print!("\r              \r");
-                    io::stdout().flush()?;
-                    polished
-                }
+                Ok(polished) => polished,
                 Err(e) => {
-                    eprintln!("\rPolish warning: {e}");
+                    eprintln!("Polish warning: {e}");
                     eprintln!("Falling back to raw transcript");
                     transcription
                 }
@@ -215,6 +207,8 @@ pub fn run(polish_flag: bool, preset_name: Option<String>) -> Result<()> {
     // Copy to clipboard
     copy_to_clipboard(&final_text)?;
 
+    app::typewriter(" Done", 20);
+    println!();  // End the status line
     println!("Copied to clipboard");
 
     Ok(())

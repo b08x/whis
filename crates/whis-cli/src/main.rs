@@ -48,6 +48,7 @@ fn main() -> Result<()> {
         ),
         Some(args::Commands::Presets { action }) => commands::presets::run(action),
         Some(args::Commands::Setup { mode }) => commands::setup::run(mode),
+        Some(args::Commands::Models { action }) => commands::models::run(action),
         None => commands::record_once::run(cli.polish, cli.preset),
     }
 }

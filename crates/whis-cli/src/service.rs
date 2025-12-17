@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use std::io::Write;
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use tokio::time::sleep;
@@ -45,7 +44,12 @@ impl Service {
         // Create IPC server
         let ipc_server = IpcServer::new().context("Failed to create IPC server")?;
 
-        println!("whis listening. Ctrl+C to stop.");
+        // Show startup message with shortcut hint
+        let settings = Settings::load();
+        println!(
+            "Press {} to record. Ctrl+C to stop.",
+            settings.shortcut
+        );
 
         loop {
             // Check for incoming IPC connections (non-blocking)
@@ -111,8 +115,7 @@ impl Service {
                 };
                 match self.start_recording().await {
                     Ok(_) => {
-                        print!("#{count} recording...");
-                        let _ = std::io::stdout().flush();
+                        println!("#{count} Recording...");
                         IpcResponse::Recording
                     }
                     Err(e) => {
@@ -126,19 +129,19 @@ impl Service {
                 *self.state.lock().unwrap() = ServiceState::Transcribing;
                 let count = *self.recording_counter.lock().unwrap();
 
-                // Show transcribing state (overwrite recording line)
-                print!("\r#{count} transcribing...");
-                let _ = std::io::stdout().flush();
+                println!("#{count} Transcribing...");
 
-                match self.stop_and_transcribe().await {
+                match self.stop_and_transcribe(count).await {
                     Ok(_) => {
                         *self.state.lock().unwrap() = ServiceState::Idle;
-                        println!("\r#{count} done            ");
+                        println!("#{count} done");
+                        println!(); // blank line between transcriptions
                         IpcResponse::Success
                     }
                     Err(e) => {
                         *self.state.lock().unwrap() = ServiceState::Idle;
-                        println!("\r#{count} error: {e}");
+                        println!("#{count} error: {e}");
+                        println!();
                         IpcResponse::Error(e.to_string())
                     }
                 }
@@ -162,7 +165,7 @@ impl Service {
     }
 
     /// Stop recording and transcribe
-    async fn stop_and_transcribe(&self) -> Result<()> {
+    async fn stop_and_transcribe(&self, count: u32) -> Result<()> {
         // Get the recorder
         let mut recorder = self
             .recorder
@@ -203,6 +206,8 @@ impl Service {
         let settings = Settings::load();
         let final_text = if settings.polisher != Polisher::None {
             if let Some(polisher_api_key) = settings.get_polisher_api_key() {
+                println!("#{count} Polishing...");
+
                 let prompt = settings
                     .polish_prompt
                     .as_deref()

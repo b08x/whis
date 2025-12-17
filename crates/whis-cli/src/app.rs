@@ -1,5 +1,11 @@
 use anyhow::Result;
+use crossterm::{
+    event::{self, Event, KeyCode},
+    terminal::{disable_raw_mode, enable_raw_mode},
+};
 use std::io::Write;
+use std::thread;
+use std::time::Duration;
 use whis_core::{Settings, TranscriptionProvider};
 
 /// Configuration for transcription, including provider, API key, and language
@@ -91,8 +97,31 @@ pub fn load_transcription_config() -> Result<TranscriptionConfig> {
 }
 
 pub fn wait_for_enter() -> Result<()> {
-    let mut input = String::new();
     std::io::stdout().flush()?;
-    std::io::stdin().read_line(&mut input)?;
+
+    // Enable raw mode to read keypresses without echoing
+    enable_raw_mode()?;
+
+    // Wait for Enter key
+    loop {
+        if let Event::Key(key_event) = event::read()? {
+            if key_event.code == KeyCode::Enter {
+                break;
+            }
+        }
+    }
+
+    // Restore normal mode
+    disable_raw_mode()?;
+
     Ok(())
+}
+
+/// Print text with a typewriter effect
+pub fn typewriter(text: &str, delay_ms: u64) {
+    for c in text.chars() {
+        print!("{}", c);
+        std::io::stdout().flush().ok();
+        thread::sleep(Duration::from_millis(delay_ms));
+    }
 }

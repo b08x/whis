@@ -213,7 +213,10 @@ fn setup_self_hosted(url_arg: Option<String>) -> Result<()> {
     println!();
     println!("If you haven't started the server yet:");
     println!("  cd docker && docker compose up -d");
-    println!("  docker exec -it whis-ollama ollama pull phi3");
+    println!(
+        "  docker exec -it whis-ollama ollama pull {}",
+        ollama::DEFAULT_OLLAMA_MODEL
+    );
     println!();
 
     // Get server URL
@@ -275,7 +278,10 @@ fn setup_self_hosted(url_arg: Option<String>) -> Result<()> {
         println!();
         println!("Warning: Ollama not reachable at {}", ollama_url);
         println!("Polishing will not work. To enable:");
-        println!("  docker exec -it whis-ollama ollama pull phi3");
+        println!(
+            "  docker exec -it whis-ollama ollama pull {}",
+            ollama::DEFAULT_OLLAMA_MODEL
+        );
     }
 
     // Save configuration
