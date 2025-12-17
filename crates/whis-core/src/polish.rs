@@ -165,7 +165,7 @@ async fn polish_mistral(
         .ok_or_else(|| anyhow!("No response from Mistral"))
 }
 
-const DEFAULT_OLLAMA_MODEL: &str = "phi3";
+const DEFAULT_OLLAMA_MODEL: &str = "ministral-3:3b";
 const DEFAULT_OLLAMA_URL: &str = "http://localhost:11434";
 
 /// Ollama API response structure

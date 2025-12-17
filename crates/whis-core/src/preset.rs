@@ -200,4 +200,78 @@ impl Preset {
             model: None,
         }
     }
+
+    /// Check if a name is a built-in preset
+    pub fn is_builtin(name: &str) -> bool {
+        Self::builtins().iter().any(|p| p.name == name)
+    }
+
+    /// Validate preset name
+    /// - Must be 1-50 characters
+    /// - Only alphanumeric, hyphens, underscores
+    /// - Cannot conflict with built-in names
+    pub fn validate_name(name: &str, allow_builtin_conflict: bool) -> Result<(), String> {
+        let name = name.trim();
+
+        if name.is_empty() {
+            return Err("Preset name cannot be empty".to_string());
+        }
+
+        if name.len() > 50 {
+            return Err("Preset name must be 50 characters or less".to_string());
+        }
+
+        // Check valid characters
+        if !name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(
+                "Preset name can only contain letters, numbers, hyphens, and underscores"
+                    .to_string(),
+            );
+        }
+
+        // Check for built-in conflict
+        if !allow_builtin_conflict && Self::is_builtin(name) {
+            return Err(format!(
+                "Cannot use '{}' - it's a built-in preset name",
+                name
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Save this preset as a user preset file
+    pub fn save(&self) -> Result<(), String> {
+        // Ensure presets directory exists
+        let dir = Self::presets_dir();
+        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create presets directory: {}", e))?;
+
+        let path = dir.join(format!("{}.json", self.name));
+        let content =
+            serde_json::to_string_pretty(self).map_err(|e| format!("Failed to serialize: {}", e))?;
+
+        fs::write(&path, content).map_err(|e| format!("Failed to write preset file: {}", e))?;
+
+        Ok(())
+    }
+
+    /// Delete a user preset by name
+    pub fn delete(name: &str) -> Result<(), String> {
+        if Self::is_builtin(name) {
+            return Err(format!("Cannot delete built-in preset '{}'", name));
+        }
+
+        let path = Self::presets_dir().join(format!("{}.json", name));
+
+        if !path.exists() {
+            return Err(format!("Preset '{}' not found", name));
+        }
+
+        fs::remove_file(&path).map_err(|e| format!("Failed to delete preset: {}", e))?;
+
+        Ok(())
+    }
 }

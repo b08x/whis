@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 pub const DEFAULT_OLLAMA_URL: &str = "http://localhost:11434";
 
 /// Default model for polishing
-pub const DEFAULT_OLLAMA_MODEL: &str = "phi3";
+pub const DEFAULT_OLLAMA_MODEL: &str = "ministral-3:3b";
 
 /// Timeout for Ollama to start
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
@@ -27,6 +27,16 @@ struct TagsResponse {
 #[derive(Debug, Deserialize)]
 struct ModelInfo {
     name: String,
+}
+
+/// Progress response from Ollama pull API (streaming NDJSON)
+#[derive(Debug, Deserialize)]
+struct PullProgress {
+    status: String,
+    #[serde(default)]
+    completed: u64,
+    #[serde(default)]
+    total: u64,
 }
 
 /// Check if Ollama is reachable at the given URL
@@ -152,7 +162,7 @@ pub fn has_model(url: &str, model: &str) -> Result<bool> {
 
     let tags: TagsResponse = response.json().context("Failed to parse Ollama response")?;
 
-    // Model names can have tags like "phi3:latest", check for prefix match
+    // Model names can have tags like "ministral-3:3b:latest", check for prefix match
     let model_base = model.split(':').next().unwrap_or(model);
     Ok(tags
         .models
@@ -178,6 +188,63 @@ pub fn pull_model(_url: &str, model: &str) -> Result<()> {
     }
 
     eprintln!("Model '{}' is ready.", model);
+    Ok(())
+}
+
+/// Pull a model from Ollama registry with progress callback
+///
+/// Uses the Ollama HTTP API for streaming progress updates.
+/// Calls `on_progress(completed_bytes, total_bytes)` during download.
+pub fn pull_model_with_progress(
+    url: &str,
+    model: &str,
+    on_progress: impl Fn(u64, u64),
+) -> Result<()> {
+    use std::io::BufRead;
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(3600)) // 1 hour for large models
+        .build()
+        .context("Failed to create HTTP client")?;
+
+    let pull_url = format!("{}/api/pull", url.trim_end_matches('/'));
+
+    let response = client
+        .post(&pull_url)
+        .json(&serde_json::json!({ "name": model }))
+        .send()
+        .context("Failed to connect to Ollama")?;
+
+    if !response.status().is_success() {
+        return Err(anyhow!(
+            "Ollama pull failed: {} - {}",
+            response.status(),
+            response.text().unwrap_or_default()
+        ));
+    }
+
+    // Stream the response line by line (NDJSON format)
+    let reader = std::io::BufReader::new(response);
+    for line in reader.lines() {
+        let line = line.context("Failed to read response")?;
+        if line.is_empty() {
+            continue;
+        }
+
+        // Parse the JSON progress
+        if let Ok(progress) = serde_json::from_str::<PullProgress>(&line) {
+            // Report progress when we have total size info
+            if progress.total > 0 {
+                on_progress(progress.completed, progress.total);
+            }
+
+            // Check for error status
+            if progress.status.contains("error") {
+                return Err(anyhow!("Pull failed: {}", progress.status));
+            }
+        }
+    }
+
     Ok(())
 }
 

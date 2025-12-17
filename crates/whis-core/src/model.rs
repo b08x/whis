@@ -60,8 +60,36 @@ pub fn get_model_url(name: &str) -> Option<&'static str> {
         .map(|(_, url, _)| *url)
 }
 
-/// Download a whisper model with progress indication
+/// Download a whisper model with progress indication (prints to stderr)
 pub fn download_model(model_name: &str, dest: &Path) -> Result<()> {
+    download_model_with_progress(model_name, dest, |downloaded, total| {
+        let progress = if total > 0 {
+            (downloaded * 100 / total) as usize
+        } else {
+            0
+        };
+        eprint!(
+            "\rDownloading: {}% ({:.1} MB / {:.1} MB)  ",
+            progress,
+            downloaded as f64 / 1_000_000.0,
+            total as f64 / 1_000_000.0
+        );
+        io::stderr().flush().ok();
+    })
+}
+
+/// Download a whisper model with a custom progress callback
+///
+/// The callback receives (downloaded_bytes, total_bytes) and is called
+/// approximately every 1% of progress or every 500KB, whichever is more frequent.
+pub fn download_model_with_progress<F>(
+    model_name: &str,
+    dest: &Path,
+    on_progress: F,
+) -> Result<()>
+where
+    F: Fn(u64, u64),
+{
     let url = get_model_url(model_name).ok_or_else(|| {
         anyhow!(
             "Unknown model: {}. Available: tiny, base, small, medium",
@@ -91,7 +119,7 @@ pub fn download_model(model_name: &str, dest: &Path) -> Result<()> {
         return Err(anyhow!("Download failed: HTTP {}", response.status()));
     }
 
-    let total_size = response.content_length();
+    let total_size = response.content_length().unwrap_or(0);
 
     // Create temp file first, then rename on success
     let temp_path = dest.with_extension("bin.tmp");
@@ -99,7 +127,10 @@ pub fn download_model(model_name: &str, dest: &Path) -> Result<()> {
 
     let mut downloaded: u64 = 0;
     let mut buffer = [0u8; 8192];
-    let mut last_progress = 0;
+    let mut last_callback_bytes: u64 = 0;
+
+    // Emit initial progress
+    on_progress(0, total_size);
 
     loop {
         let bytes_read = response.read(&mut buffer).context("Download interrupted")?;
@@ -111,21 +142,21 @@ pub fn download_model(model_name: &str, dest: &Path) -> Result<()> {
             .context("Failed to write to file")?;
         downloaded += bytes_read as u64;
 
-        // Show progress every 5%
-        if let Some(total) = total_size {
-            let progress = (downloaded * 100 / total) as usize;
-            if progress >= last_progress + 5 {
-                eprint!(
-                    "\rDownloading: {}% ({:.1} MB / {:.1} MB)  ",
-                    progress,
-                    downloaded as f64 / 1_000_000.0,
-                    total as f64 / 1_000_000.0
-                );
-                io::stderr().flush().ok();
-                last_progress = progress;
-            }
+        // Emit progress every ~1% or 500KB, whichever is more frequent
+        let threshold = if total_size > 0 {
+            (total_size / 100).min(500_000)
+        } else {
+            500_000
+        };
+
+        if downloaded - last_callback_bytes >= threshold {
+            on_progress(downloaded, total_size);
+            last_callback_bytes = downloaded;
         }
     }
+
+    // Final progress callback
+    on_progress(downloaded, total_size);
 
     eprintln!(
         "\rDownload complete: {:.1} MB                    ",

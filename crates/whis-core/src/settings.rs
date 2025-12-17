@@ -32,13 +32,16 @@ pub struct Settings {
     /// Ollama server URL for local LLM polishing (default: http://localhost:11434)
     #[serde(default)]
     pub ollama_url: Option<String>,
-    /// Ollama model name for polishing (default: phi3)
+    /// Ollama model name for polishing (default: ministral-3:3b)
     #[serde(default)]
     pub ollama_model: Option<String>,
     /// Remote whisper server URL for self-hosted transcription
     /// (e.g., http://localhost:8765)
     #[serde(default)]
     pub remote_whisper_url: Option<String>,
+    /// Currently active preset name (if any)
+    #[serde(default)]
+    pub active_preset: Option<String>,
 }
 
 impl Default for Settings {
@@ -54,6 +57,7 @@ impl Default for Settings {
             ollama_url: None,
             ollama_model: None,
             remote_whisper_url: None,
+            active_preset: None,
         }
     }
 }
@@ -97,6 +101,22 @@ impl Settings {
     /// Check if an API key is configured for the current provider
     pub fn has_api_key(&self) -> bool {
         self.get_api_key().is_some()
+    }
+
+    /// Check if the current provider is properly configured
+    ///
+    /// For cloud providers: checks for API key
+    /// For LocalWhisper: checks for model path AND that file exists
+    /// For RemoteWhisper: checks for server URL
+    pub fn is_provider_configured(&self) -> bool {
+        match self.provider {
+            TranscriptionProvider::LocalWhisper => self
+                .get_whisper_model_path()
+                .map(|p| std::path::Path::new(&p).exists())
+                .unwrap_or(false),
+            TranscriptionProvider::RemoteWhisper => self.get_remote_whisper_url().is_some(),
+            _ => self.has_api_key(),
+        }
     }
 
     /// Get the API key for the polisher, falling back to environment variables
