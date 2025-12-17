@@ -1,504 +1,793 @@
 # Chapter 23: Vue Frontend & Tauri Integration
 
-The Whis desktop UI is built with Vue 3.6 alpha, specifically using **Vapor Mode**—Vue's upcoming compile-time optimized rendering strategy. This is a deliberate choice: Whis is a personal hobby project, and Frank is a Vue fan eagerly waiting for Vapor's stable release.
+The Whis desktop UI is built with Vue 3, using a proper SPA architecture with routing, centralized state management, and reusable composables. This chapter explores how the frontend integrates with the Rust backend through Tauri's IPC system.
 
-In this chapter, we'll explore:
-- Why Vapor Mode, and how it differs from traditional Vue
-- The component structure (App.vue, HomeView, ShortcutView, ApiKeyView)
-- How Vue components call Rust commands via `@tauri-apps/api`
-- Reactive state management without Pinia/Vuex
-- The build process with Vite and rolldown
+## Architecture Overview
 
-## Why Vue 3.6 Vapor Mode?
-
-Traditional Vue uses a **Virtual DOM**: the framework builds a JavaScript representation of the DOM tree, diffs it on updates, and patches the real DOM. This works well but has overhead—every component update requires diffing, even if only one reactive value changed.
-
-**Vapor Mode** is Vue's answer to Solid.js and Svelte: **no Virtual DOM**. The compiler analyzes your template at build time and generates granular reactivity code that directly updates the DOM when specific reactive values change. Think of it as Vue's version of "compiled away"—you write Vue, but the output is optimized imperative DOM updates.
-
-Benefits for Whis:
-- **Smaller bundle**: No vdom runtime (Whis UI bundle is ~40KB gzipped)
-- **Faster updates**: Direct DOM manipulation, no diffing
-- **Still Vue**: Composition API, `ref()`, `computed()`, all work as expected
-
-The tradeoff: Vapor Mode is **alpha** (as of 3.6.0-alpha.5). Production apps shouldn't use it yet. But for a personal desktop app with controlled deployment, it's perfect for experimenting with the future of Vue.
-
-From `package.json` (line 13):
-
-```json
-"dependencies": {
-  "@tauri-apps/api": "^2.0.0",
-  "@tauri-apps/plugin-process": "^2.3.1",
-  "vue": "^3.6.0-alpha.5"
-}
+```
+whis-desktop/ui/src/
+├── main.ts                    # Entry point with router setup
+├── App.vue                    # Root component with sidebar/shell
+├── types.ts                   # TypeScript type definitions
+├── router/
+│   └── index.ts               # Vue Router configuration
+├── stores/
+│   └── settings.ts            # Centralized settings state
+├── composables/
+│   ├── useKeyboardCapture.ts  # Keyboard shortcut recording
+│   ├── useAsyncOperation.ts   # Async state management
+│   └── useWhisperModel.ts     # Model download management
+├── components/
+│   ├── AppButton.vue          # Reusable button
+│   ├── AppInput.vue           # Reusable input
+│   ├── AppSelect.vue          # Reusable dropdown
+│   └── settings/              # Settings-specific components
+│       ├── ModeCards.vue
+│       ├── CloudProviderConfig.vue
+│       ├── LocalWhisperConfig.vue
+│       └── ...
+└── views/
+    ├── HomeView.vue           # Recording controls
+    ├── ShortcutView.vue       # Global shortcut config
+    ├── SettingsView.vue       # Provider & API settings
+    ├── PresetsView.vue        # Preset management
+    └── AboutView.vue          # Version info
 ```
 
-**From `whis-desktop/ui/package.json:13`**
+This structure separates concerns:
+- **Router**: Navigation between views
+- **Stores**: Centralized state management
+- **Composables**: Reusable logic extracted from components
+- **Components**: Reusable UI elements
+- **Views**: Page-level components rendered by router
 
 ## Entry Point: main.ts
 
-Vapor Mode has a different API from standard Vue. Instead of `createApp()`, we use `createVaporApp()`:
+**From `whis-desktop/ui/src/main.ts`**:
 
 ```typescript
-import { createVaporApp } from 'vue';
-import App from './App.vue';
+import { createApp } from 'vue'
+import App from './App.vue'
+import router from './router'
 
-type VaporRoot = Parameters<typeof createVaporApp>[0];
-const RootComponent = App as unknown as VaporRoot;
-
-createVaporApp(RootComponent).mount('#app');
+const app = createApp(App)
+app.use(router)
+app.mount('#app')
 ```
 
-**From `whis-desktop/ui/src/main.ts:1-7`**
+Simple and standard Vue 3 setup:
+1. Create app instance
+2. Install router plugin
+3. Mount to DOM
 
-Key differences:
-- `createVaporApp()` expects a different component type (hence the cast)
-- No plugins passed at this stage (Tauri API is global, no need for `app.use()`)
-- Mount to `#app` in `index.html`, same as regular Vue
+No Pinia or other plugins—the settings store is a lightweight custom implementation.
 
-The TypeScript cast is necessary because Vapor's types aren't fully stable yet. In Vapor stable, this will just be `createVaporApp(App).mount('#app')`.
+## Vue Router Configuration
 
-## Component Structure
+**From `whis-desktop/ui/src/router/index.ts`**:
 
-Whis has a simple single-page architecture:
+```typescript
+import { createRouter, createWebHashHistory } from 'vue-router'
 
+const routes = [
+  {
+    path: '/',
+    name: 'home',
+    component: () => import('../views/HomeView.vue'),
+    meta: { title: 'Whis' },
+  },
+  {
+    path: '/shortcut',
+    name: 'shortcut',
+    component: () => import('../views/ShortcutView.vue'),
+    meta: { title: 'Global Shortcut' },
+  },
+  {
+    path: '/settings',
+    name: 'settings',
+    component: () => import('../views/SettingsView.vue'),
+    meta: { title: 'Settings' },
+  },
+  {
+    path: '/presets',
+    name: 'presets',
+    component: () => import('../views/PresetsView.vue'),
+    meta: { title: 'Presets' },
+  },
+  {
+    path: '/about',
+    name: 'about',
+    component: () => import('../views/AboutView.vue'),
+    meta: { title: 'About' },
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'not-found',
+    component: () => import('../views/NotFoundView.vue'),
+    meta: { title: 'Not Found' },
+  },
+]
+
+const router = createRouter({
+  history: createWebHashHistory(),
+  routes,
+})
+
+// Update document title on navigation
+router.afterEach((to) => {
+  const title = to.meta.title as string | undefined
+  document.title = title ? `${title} - Whis` : 'Whis'
+})
+
+export default router
 ```
-App.vue (root)
-├── HomeView.vue
-├── ShortcutView.vue
-├── ApiKeyView.vue
-└── AboutView.vue
+
+**Key design decisions**:
+
+### Hash Mode for Tauri
+
+```typescript
+history: createWebHashHistory()
 ```
 
-**App.vue** manages:
-- Top-level state (settings, backend info, portal shortcut)
-- Navigation between views
-- Sidebar and window controls
+Tauri loads the frontend from local files, not a web server. Hash mode (`/#/settings`) works without server-side routing:
+- URLs like `index.html#/settings` work offline
+- No 404s when navigating directly to a route
+- Bookmarks work correctly
 
-Each view is conditionally rendered with `v-if`:
+### Lazy-Loaded Components
 
-```vue
-<HomeView
-  v-if="activeSection === 'home'"
-  :current-shortcut="currentShortcut"
-  :portal-shortcut="portalShortcut"
-/>
-
-<ShortcutView
-  v-if="activeSection === 'shortcut'"
-  :backend-info="backendInfo"
-  :current-shortcut="currentShortcut"
-  :portal-shortcut="portalShortcut"
-  :portal-bind-error="portalBindError"
-  @update:current-shortcut="currentShortcut = $event"
-  @update:portal-shortcut="portalShortcut = $event"
-/>
+```typescript
+component: () => import('../views/HomeView.vue'),
 ```
 
-**From `whis-desktop/ui/src/App.vue:169-183`**
+Each view is lazy-loaded. Benefits:
+- Faster initial load (only load what's needed)
+- Better code splitting
+- Smaller initial bundle
 
-No Vue Router—the app is small enough that conditional rendering is cleaner. `activeSection` is a simple `ref<Section>('home')` that changes on sidebar button clicks.
+### Route Meta for Titles
 
-## Vapor Mode Syntax
+```typescript
+meta: { title: 'Global Shortcut' }
 
-All components use `<script setup lang="ts" vapor>`:
+router.afterEach((to) => {
+  document.title = title ? `${title} - Whis` : 'Whis'
+})
+```
 
-```vue
-<script setup lang="ts" vapor>
-import { ref, computed, onMounted } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
+The `afterEach` guard updates the document title on every navigation. This shows the current section in the window title bar.
 
-const status = ref<StatusResponse>({ state: 'Idle', config_valid: false });
-const error = ref<string | null>(null);
+## Type Definitions
 
-async function toggleRecording() {
+**From `whis-desktop/ui/src/types.ts`**:
+
+```typescript
+// Transcription providers
+export type Provider =
+  | 'openai'
+  | 'mistral'
+  | 'groq'
+  | 'deepgram'
+  | 'elevenlabs'
+  | 'local-whisper'
+  | 'remote-whisper'
+
+// Text polishing providers
+export type Polisher = 'none' | 'openai' | 'mistral' | 'ollama'
+
+// All settings from the backend
+export interface Settings {
+  shortcut: string
+  provider: Provider
+  language: string | null
+  api_keys: Record<string, string>
+  whisper_model_path: string | null
+  remote_whisper_url: string | null
+  polisher: Polisher
+  ollama_url: string | null
+  ollama_model: string | null
+  polish_prompt: string | null
+  active_preset: string | null
+}
+
+// Shortcut backend information
+export interface BackendInfo {
+  backend: string
+  requires_restart: boolean
+  compositor: string
+  portal_version: number
+}
+
+// Status response from backend
+export interface StatusResponse {
+  state: 'Idle' | 'Recording' | 'Transcribing'
+  config_valid: boolean
+}
+```
+
+These types mirror the Rust structs from the backend. TypeScript ensures the frontend and backend stay in sync—mismatches cause compile-time errors.
+
+## The Settings Store
+
+Instead of Pinia, Whis uses a lightweight custom store pattern with Vue's reactivity system.
+
+**From `whis-desktop/ui/src/stores/settings.ts`**:
+
+```typescript
+import { reactive, readonly } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
+import type { Settings, BackendInfo, Provider, Polisher } from '../types'
+
+// Default settings values
+const defaultSettings: Settings = {
+  shortcut: 'Ctrl+Shift+R',
+  provider: 'openai',
+  language: null,
+  api_keys: {},
+  // ... more defaults
+}
+
+// Internal mutable state
+const state = reactive({
+  ...defaultSettings,
+  backendInfo: null as BackendInfo | null,
+  portalShortcut: null as string | null,
+  portalBindError: null as string | null,
+  loaded: false,
+})
+
+// Actions
+async function load() {
   try {
-    await invoke('toggle_recording');
-    await fetchStatus();
+    const settings = await invoke<Settings>('get_settings')
+    state.shortcut = settings.shortcut
+    state.provider = settings.provider || 'openai'
+    // ... copy all fields
   } catch (e) {
-    error.value = String(e);
+    console.error('Failed to load settings:', e)
   }
 }
-</script>
+
+async function save(): Promise<boolean> {
+  try {
+    const result = await invoke<{ needs_restart: boolean }>('save_settings', {
+      settings: {
+        shortcut: state.shortcut,
+        provider: state.provider,
+        // ... all settings fields
+      },
+    })
+    return result.needs_restart
+  } catch (e) {
+    console.error('Failed to save settings:', e)
+    throw e
+  }
+}
+
+// Setters for individual fields
+function setProvider(value: Provider) {
+  state.provider = value
+}
+
+function setApiKey(provider: string, key: string) {
+  state.api_keys = { ...state.api_keys, [provider]: key }
+}
+
+// Export reactive state and actions
+export const settingsStore = {
+  state: readonly(state),      // Read-only for most consumers
+  mutableState: state,          // Mutable for v-model binding
+  load,
+  save,
+  setProvider,
+  setApiKey,
+  // ... more setters
+}
 ```
 
-**From `whis-desktop/ui/src/views/HomeView.vue:1-68`**
+### Why Not Pinia?
 
-The `vapor` attribute tells the Vue compiler to use Vapor Mode compilation. Without it, the component would compile to standard vdom code.
+1. **Small scope**: Single store for settings is all we need
+2. **Rust is source of truth**: Backend owns the data, frontend just mirrors it
+3. **Simpler**: No plugin setup, no devtools dependency
+4. **Type inference**: Custom store has full TypeScript support
 
-Everything else is normal Vue:
-- `ref()` for reactive state
-- `computed()` for derived values
-- `onMounted()` / `onUnmounted()` for lifecycle
-- `defineProps()` / `defineEmits()` for component interface
+### Readonly vs Mutable State
+
+```typescript
+state: readonly(state),    // For reading
+mutableState: state,       // For v-model
+```
+
+Two access patterns:
+- `settingsStore.state.provider` — Read-only, prevents accidental mutations
+- `settingsStore.mutableState.shortcut` — Mutable for `v-model` binding
+
+## Composables: Reusable Logic
+
+Composables extract reusable logic from components. Vue 3's Composition API makes this pattern elegant.
+
+### useKeyboardCapture
+
+**From `whis-desktop/ui/src/composables/useKeyboardCapture.ts`**:
+
+```typescript
+import { ref, computed } from 'vue'
+
+export function useKeyboardCapture(initialValue: string = '') {
+  const isRecording = ref(false)
+  const capturedShortcut = ref(initialValue)
+
+  const shortcutKeys = computed(() => {
+    if (capturedShortcut.value === 'Press keys...') return ['...']
+    return capturedShortcut.value.split('+')
+  })
+
+  function handleKeyDown(e: KeyboardEvent) {
+    if (!isRecording.value) return
+    e.preventDefault()
+
+    const keys: string[] = []
+    if (e.ctrlKey) keys.push('Ctrl')
+    if (e.shiftKey) keys.push('Shift')
+    if (e.altKey) keys.push('Alt')
+    if (e.metaKey) keys.push('Super')
+
+    const key = e.key.toUpperCase()
+    if (!['CONTROL', 'SHIFT', 'ALT', 'META'].includes(key)) {
+      keys.push(key)
+    }
+
+    if (keys.length > 0) {
+      capturedShortcut.value = keys.join('+')
+    }
+  }
+
+  function startRecording() {
+    isRecording.value = true
+    capturedShortcut.value = 'Press keys...'
+  }
+
+  function stopRecording() {
+    isRecording.value = false
+  }
+
+  return {
+    isRecording,
+    capturedShortcut,
+    shortcutKeys,
+    handleKeyDown,
+    startRecording,
+    stopRecording,
+  }
+}
+```
+
+**Usage in ShortcutView**:
+
+```vue
+<script setup lang="ts">
+import { useKeyboardCapture } from '@/composables/useKeyboardCapture'
+
+const {
+  isRecording,
+  shortcutKeys,
+  handleKeyDown,
+  startRecording,
+  stopRecording,
+} = useKeyboardCapture('Ctrl+Shift+R')
+</script>
+
+<template>
+  <div
+    class="shortcut-input"
+    :class="{ recording: isRecording }"
+    @click="startRecording"
+    @blur="stopRecording"
+    @keydown="handleKeyDown"
+    tabindex="0"
+  >
+    <span v-for="key in shortcutKeys" class="key">{{ key }}</span>
+  </div>
+</template>
+```
+
+### useAsyncOperation
+
+**From `whis-desktop/ui/src/composables/useAsyncOperation.ts`**:
+
+```typescript
+export function useAsyncOperation<T, Args extends unknown[] = unknown[]>(
+  operation: (...args: Args) => Promise<T>,
+  options: {
+    errorTimeout?: number
+    successTimeout?: number
+    onSuccess?: (data: T) => void
+    onError?: (error: string) => void
+  } = {}
+): AsyncOperationReturn<T, Args> {
+  const data = ref<T | null>(null)
+  const error = ref<string | null>(null)
+  const isLoading = ref(false)
+
+  const isSuccess = computed(() => data.value !== null && !error.value && !isLoading.value)
+  const isError = computed(() => error.value !== null)
+
+  async function execute(...args: Args): Promise<T | null> {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const result = await operation(...args)
+      data.value = result
+      options.onSuccess?.(result)
+      return result
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e)
+      options.onError?.(error.value)
+      return null
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  return { data, error, isLoading, isSuccess, isError, execute }
+}
+```
+
+This composable standardizes async state management:
+
+```typescript
+const { data, isLoading, error, execute } = useAsyncOperation(
+  async (id: string) => await invoke<User>('get_user', { id })
+)
+
+// In template: v-if="isLoading" / v-if="error" / {{ data }}
+await execute('user-123')
+```
+
+## Root Component: App.vue
+
+**From `whis-desktop/ui/src/App.vue`**:
+
+```vue
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import { invoke } from '@tauri-apps/api/core'
+import { settingsStore } from './stores/settings'
+
+const route = useRoute()
+const loaded = computed(() => settingsStore.state.loaded)
+const currentRoute = computed(() => route.name as string)
+
+const navItems = [
+  { name: 'home', label: 'home', path: '/' },
+  { name: 'shortcut', label: 'shortcut', path: '/shortcut' },
+  { name: 'settings', label: 'settings', path: '/settings' },
+  { name: 'presets', label: 'presets', path: '/presets' },
+  { name: 'about', label: 'about', path: '/about' },
+]
+
+async function closeWindow() {
+  try {
+    const canReopen = await invoke<boolean>('can_reopen_window')
+    if (canReopen) {
+      await getCurrentWindow().hide()
+    } else {
+      await getCurrentWindow().close()
+    }
+  } catch {
+    await getCurrentWindow().close()
+  }
+}
+
+onMounted(async () => {
+  await settingsStore.initialize()
+})
+</script>
+
+<template>
+  <div class="app" :class="{ loaded }">
+    <div class="window">
+      <aside class="sidebar" data-tauri-drag-region>
+        <div class="brand">
+          <span class="wordmark">whis</span>
+        </div>
+
+        <nav class="nav">
+          <router-link
+            v-for="item in navItems"
+            :key="item.name"
+            :to="item.path"
+            class="nav-item"
+            :class="{ active: currentRoute === item.name }"
+          >
+            {{ item.label }}
+          </router-link>
+        </nav>
+      </aside>
+
+      <main class="content">
+        <div class="titlebar" data-tauri-drag-region>
+          <div class="window-controls">
+            <button @click="minimizeWindow">-</button>
+            <button @click="closeWindow">×</button>
+          </div>
+        </div>
+
+        <router-view />
+      </main>
+    </div>
+  </div>
+</template>
+```
+
+**Key patterns**:
+
+### Router-Link Navigation
+
+```vue
+<router-link :to="item.path" class="nav-item">
+  {{ item.label }}
+</router-link>
+```
+
+Vue Router's `<router-link>` handles navigation. The `active` class is applied based on current route name.
+
+### Router-View Slot
+
+```vue
+<router-view />
+```
+
+This renders the current route's component (HomeView, SettingsView, etc.).
+
+### Window Controls with Tauri Drag Region
+
+```vue
+<div class="titlebar" data-tauri-drag-region>
+```
+
+The `data-tauri-drag-region` attribute tells Tauri this area can be used to drag the window. Essential for custom window decorations.
+
+### Smart Close Behavior
+
+```typescript
+async function closeWindow() {
+  const canReopen = await invoke<boolean>('can_reopen_window')
+  if (canReopen) {
+    await getCurrentWindow().hide()
+  } else {
+    await getCurrentWindow().close()
+  }
+}
+```
+
+If the user has a global shortcut configured, "close" just hides the window (can reopen with shortcut). Otherwise, it actually closes.
 
 ## Calling Rust Commands
 
-The `@tauri-apps/api` package provides the bridge to Rust. Core function: `invoke()`.
+The `@tauri-apps/api` package provides the IPC bridge to Rust.
 
 ### Basic Invocation
 
 ```typescript
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@tauri-apps/api/core'
 
-const settings = await invoke<Settings>('get_settings');
+const settings = await invoke<Settings>('get_settings')
 ```
 
-**From `whis-desktop/ui/src/App.vue:49`**
-
-This calls the `get_settings` command we defined in Chapter 21. TypeScript generic `<Settings>` ensures type safety on the returned value.
+The generic `<Settings>` ensures type safety on the returned value.
 
 ### With Parameters
 
 ```typescript
 await invoke<SaveResult>('save_settings', {
   settings: {
-    shortcut: currentShortcut,
-    provider: provider,
-    language: language,
-    api_keys: apiKeys
+    shortcut: 'Ctrl+Shift+R',
+    provider: 'openai',
+    // ...
   }
-});
+})
 ```
 
-**From `whis-desktop/ui/src/views/ApiKeyView.vue:80-87`**
-
-Parameters are passed as a single object. Keys must match Rust command parameter names (using snake_case).
+Parameters are passed as a single object. Keys must match Rust command parameter names.
 
 ### Error Handling
 
 ```typescript
 try {
-  await invoke('toggle_recording');
-  error.value = null;
+  await invoke('toggle_recording')
 } catch (e) {
-  error.value = String(e);
+  error.value = String(e)
 }
 ```
-
-**From `whis-desktop/ui/src/views/HomeView.vue:62-67`**
 
 If the Rust command returns `Err()`, `invoke()` throws. The error message is the string from `Err(String)`.
 
-### Polling Status
-
-HomeView polls the recording state every 500ms:
-
-```typescript
-let pollInterval: number | null = null;
-
-async function fetchStatus() {
-  try {
-    status.value = await invoke<StatusResponse>('get_status');
-  } catch (e) {
-    console.error('Failed to get status:', e);
-  }
-}
-
-onMounted(() => {
-  fetchStatus();
-  pollInterval = window.setInterval(fetchStatus, 500);
-});
-
-onUnmounted(() => {
-  if (pollInterval) {
-    clearInterval(pollInterval);
-  }
-});
-```
-
-**From `whis-desktop/ui/src/views/HomeView.vue:17-79`**
-
-This keeps the UI in sync with the Rust backend. When recording starts (either via button or shortcut), the UI updates within 500ms.
-
-Why polling instead of events? Simplicity. Tauri supports events, but for a small app with infrequent state changes, polling is easier. If Whis needed real-time updates (e.g., live transcription display), events would be better.
-
 ## Real-World Flow: Saving Settings
 
-Let's trace what happens when you change a setting and click Save in ApiKeyView:
+Let's trace what happens when the user saves settings:
 
-**1. User edits API key input**
+**1. User changes a setting**
+
+In SettingsView, the user selects a different provider:
 
 ```vue
-<input
-  type="password"
-  :value="getApiKey('openai')"
-  @input="updateApiKey('openai', ($event.target as HTMLInputElement).value)"
+<AppSelect
+  :model-value="settingsStore.state.provider"
+  @update:model-value="settingsStore.setProvider"
+  :options="providerOptions"
 />
 ```
 
-**From `whis-desktop/ui/src/views/ApiKeyView.vue:186-190`**
-
-The `@input` handler calls `updateApiKey()`, which emits an event:
+The `setProvider` action updates the reactive state:
 
 ```typescript
-function updateApiKey(provider: Provider, value: string) {
-  const newKeys = { ...props.apiKeys, [provider]: value };
-  emit('update:apiKeys', newKeys);
+function setProvider(value: Provider) {
+  state.provider = value
 }
 ```
 
-**From `whis-desktop/ui/src/views/ApiKeyView.vue:59-62`**
-
-**2. App.vue receives emit and updates state**
+**2. User clicks Save**
 
 ```vue
-<ApiKeyView
-  :api-keys="apiKeys"
-  @update:api-keys="apiKeys = $event"
-/>
+<button @click="handleSave" class="btn">Save</button>
 ```
-
-**From `whis-desktop/ui/src/App.vue:190-193`**
-
-The `apiKeys` ref in App.vue is now updated. But settings aren't saved yet—Vue state is ephemeral.
-
-**3. User clicks Save button**
-
-```vue
-<button @click="saveSettings" class="btn btn-secondary">Save</button>
-```
-
-**From `whis-desktop/ui/src/views/ApiKeyView.vue:304`**
-
-This calls the `saveSettings()` function:
 
 ```typescript
-async function saveSettings() {
+async function handleSave() {
   try {
-    // Validate keys
-    const openaiKey = props.apiKeys.openai || '';
-    if (openaiKey && !openaiKey.startsWith('sk-')) {
-      status.value = "Invalid OpenAI key format";
-      return;
+    const needsRestart = await settingsStore.save()
+    if (needsRestart) {
+      showRestartNotice.value = true
+    } else {
+      status.value = 'Saved'
     }
-
-    await invoke<SaveResult>('save_settings', {
-      settings: {
-        shortcut: props.currentShortcut,
-        provider: props.provider,
-        language: props.language,
-        api_keys: props.apiKeys
-      }
-    });
-    status.value = "Saved";
-    setTimeout(() => status.value = "", 2000);
   } catch (e) {
-    status.value = "Failed to save: " + e;
+    status.value = 'Failed to save'
   }
 }
 ```
 
-**From `whis-desktop/ui/src/views/ApiKeyView.vue:64-93`**
+**3. Store saves to backend**
+
+```typescript
+async function save(): Promise<boolean> {
+  const result = await invoke<{ needs_restart: boolean }>('save_settings', {
+    settings: {
+      shortcut: state.shortcut,
+      provider: state.provider,
+      // ... all fields
+    },
+  })
+  return result.needs_restart
+}
+```
 
 **4. Rust command writes to disk**
 
-The `save_settings` command (from Chapter 21) serializes the settings to JSON and writes to `~/.config/whis/settings.json`.
+The `save_settings` command serializes to JSON and writes to `~/.config/whis/settings.json`.
 
 **5. UI shows feedback**
-
-The `status` ref is updated to "Saved", which triggers Vapor's reactivity system to update the DOM. After 2 seconds, it clears.
 
 ```vue
 <div class="status" :class="{ visible: status }">{{ status }}</div>
 ```
 
-**From `whis-desktop/ui/src/views/ApiKeyView.vue:306`**
+## Component Library
 
-The `visible` class is conditionally applied, which CSS transitions handle for fade-in/out effect.
+Whis has a small library of reusable components for consistent UI:
 
-## State Management: No Store Needed
-
-Whis doesn't use Pinia or Vuex. Why?
-
-1. **Small scope**: Only 4 views, shared state fits in App.vue
-2. **Rust is the source of truth**: Settings live in `~/.config/whis/settings.json`, recording state in `AppState.recording_state`
-3. **Props/emits are enough**: Parent-child communication is simple with v-model pattern
-
-App.vue holds top-level reactive refs:
-
-```typescript
-const currentShortcut = ref("Ctrl+Shift+R");
-const portalShortcut = ref<string | null>(null);
-const provider = ref<'openai' | 'mistral' | 'groq'>('openai');
-const language = ref<string | null>(null);
-const apiKeys = ref<Record<string, string>>({});
-const backendInfo = ref<BackendInfo | null>(null);
-```
-
-**From `whis-desktop/ui/src/App.vue:30-36`**
-
-On mount, `loadSettings()` fetches from Rust:
-
-```typescript
-async function loadSettings() {
-  try {
-    const settings = await invoke<Settings>('get_settings');
-    currentShortcut.value = settings.shortcut;
-    provider.value = settings.provider || 'openai';
-    language.value = settings.language;
-    apiKeys.value = settings.api_keys || {};
-  } catch (e) {
-    console.error("Failed to load settings:", e);
-  }
-}
-```
-
-**From `whis-desktop/ui/src/App.vue:47-57`**
-
-These refs are passed as props to child views. Child views emit updates, App.vue handles them. This keeps data flow unidirectional and easy to trace.
-
-## Window Controls & Wayland Dragging
-
-Tauri apps on Linux can use GTK's native decorations or custom controls. Whis uses custom controls for consistency:
+### AppButton
 
 ```vue
-<div v-if="showCustomControls" class="titlebar" data-tauri-drag-region>
-  <div class="window-controls">
-    <button class="control-btn" @click="minimizeWindow" title="Minimize">
-      <svg>...</svg>
-    </button>
-    <button class="control-btn close" @click="closeWindow" title="Close">
-      <svg>...</svg>
-    </button>
+<AppButton @click="save" :loading="isSaving">
+  Save Settings
+</AppButton>
+```
+
+### AppInput
+
+```vue
+<AppInput
+  v-model="apiKey"
+  type="password"
+  placeholder="sk-..."
+/>
+```
+
+### AppSelect
+
+```vue
+<AppSelect
+  v-model="provider"
+  :options="[
+    { value: 'openai', label: 'OpenAI' },
+    { value: 'groq', label: 'Groq' },
+  ]"
+/>
+```
+
+### Settings Components
+
+The `components/settings/` folder has domain-specific components:
+
+- **ModeCards.vue**: Cloud vs Local toggle cards
+- **CloudProviderConfig.vue**: Provider selection + API key input
+- **LocalWhisperConfig.vue**: Model download and path configuration
+- **RemoteWhisperConfig.vue**: Server URL configuration
+- **OllamaConfig.vue**: Ollama server and model settings
+- **PolishingConfig.vue**: Polisher selection and prompt customization
+
+These are composed in SettingsView:
+
+```vue
+<template>
+  <div class="section">
+    <ModeCards v-model="mode" />
+
+    <CloudProviderConfig
+      v-if="mode === 'cloud'"
+      v-model:provider="provider"
+      v-model:api-key="apiKey"
+    />
+
+    <LocalWhisperConfig
+      v-else-if="mode === 'local'"
+      v-model:model-path="modelPath"
+    />
   </div>
-</div>
+</template>
 ```
-
-**From `whis-desktop/ui/src/App.vue:157-166`**
-
-The `data-tauri-drag-region` attribute is crucial for Wayland. It marks the titlebar as draggable, allowing the user to move the window. Without it, the window would be stuck in place.
-
-On Wayland, this works because of the GTK titlebar fix we set in Rust (`main.rs:6-13`):
-
-```rust
-gtk::glib::set_prgname(Some("ink.whis.Whis"));
-```
-
-This ensures Wayland recognizes the window properly and respects `data-tauri-drag-region`.
-
-Close button behavior:
-
-```typescript
-async function closeWindow() {
-  try {
-    const canReopen = await invoke<boolean>('can_reopen_window');
-    if (canReopen) {
-      await getCurrentWindow().hide();
-    } else {
-      await getCurrentWindow().close();
-    }
-  } catch (e) {
-    await getCurrentWindow().close();
-  }
-}
-```
-
-**From `whis-desktop/ui/src/App.vue:64-77`**
-
-If shortcuts are working or tray icon is available, we **hide** the window instead of closing. The user can reopen it with the shortcut or tray menu. If neither works, we actually quit—otherwise the user would be stranded.
 
 ## Styling: Design System
 
-Whis uses a consistent design system with CSS custom properties:
+Whis uses CSS custom properties for consistent theming:
 
 ```css
 :root {
+  /* Background */
   --bg: hsl(0, 0%, 7%);
   --bg-weak: hsl(0, 0%, 11%);
   --bg-hover: hsl(0, 0%, 16%);
+
+  /* Text */
   --text: hsl(0, 0%, 80%);
   --text-weak: hsl(0, 0%, 62%);
-  --accent: hsl(48, 100%, 60%);  /* Gold */
-  --border: hsl(0, 0%, 24%);
+  --text-strong: hsl(0, 0%, 100%);
+
+  /* Accent - gold */
+  --accent: hsl(48, 100%, 60%);
+
+  /* Typography */
   --font: "JetBrains Mono", "Fira Code", monospace;
 }
 ```
 
-**From `whis-desktop/ui/src/App.vue:209-237`**
+**From `whis-desktop/ui/src/App.vue:112-140`**
 
 Design matches the whis.ink website:
-- **Dark theme**: `--bg` is almost black (7% lightness)
-- **Gold accent**: `hsl(48, 100%, 60%)` for highlights
-- **Monospace font**: JetBrains Mono for that terminal aesthetic
+- **Dark theme**: Almost black background
+- **Gold accent**: For highlights and active states
+- **Monospace font**: Terminal aesthetic
 
-All buttons, inputs, and components reference these tokens. Changing the theme is a matter of updating `:root`.
+## Build Process: Vite
 
-Shared styles defined in `<style>` (not scoped):
-
-```css
-.btn {
-  padding: 10px 20px;
-  background: var(--bg-strong);
-  border: none;
-  border-radius: 4px;
-  font-size: 12px;
-  color: var(--text-inverted);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.btn:hover:not(:disabled) {
-  background: hsl(0, 0%, 90%);
-}
-```
-
-**From `whis-desktop/ui/src/App.vue:318-342`**
-
-View-specific styles use `<style scoped>` to prevent leakage.
-
-## Build Process: Vite & Rolldown
-
-Whis uses **Vite** (technically, rolldown-vite) for development and bundling:
+**From `whis-desktop/ui/package.json`**:
 
 ```json
-"scripts": {
-  "dev": "vite",
-  "build": "vue-tsc -b && vite build",
-  "preview": "vite preview"
+{
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview"
+  }
 }
 ```
-
-**From `whis-desktop/ui/package.json:5-9`**
-
-Note the Vite override:
-
-```json
-"vite": "npm:rolldown-vite@7.2.8",
-"overrides": {
-  "vite": "npm:rolldown-vite@7.2.8"
-}
-```
-
-**From `whis-desktop/ui/package.json:21-26`**
-
-**Rolldown** is Vite's upcoming Rust-based bundler (replacement for esbuild/rollup). It's even faster and better integrated with Vite 7+. Again, bleeding-edge choice for a hobby project.
-
-Vite config is minimal:
-
-```typescript
-export default defineConfig({
-  plugins: [vue()],
-  clearScreen: false,
-  server: {
-    port: 5173,
-    strictPort: true,
-  },
-  envPrefix: ['VITE_', 'TAURI_'],
-  build: {
-    target: ['es2021', 'chrome100', 'safari13'],
-    minify: !process.env.TAURI_DEBUG ? 'esbuild' : false,
-    sourcemap: !!process.env.TAURI_DEBUG,
-  },
-});
-```
-
-**From `whis-desktop/ui/vite.config.ts:4-17`**
-
-- `clearScreen: false`: Prevents Vite from clearing terminal (nice when running alongside Rust logs)
-- `strictPort: true`: Fail if port 5173 is taken (Tauri expects this exact port)
-- `envPrefix`: Vite injects `VITE_*` and `TAURI_*` env vars into the build
-- `target: es2021`: Modern browsers only, no legacy polyfills
-- `minify`: Only in release builds
 
 During development:
 
@@ -507,225 +796,48 @@ cd crates/whis-desktop/ui
 npm run dev
 ```
 
-Vite starts at `http://localhost:5173`. Tauri's dev server loads this URL and injects the API bridge.
+Vite starts at `http://localhost:5173`. Tauri's dev server loads this URL.
 
-For production build:
+For production:
 
 ```bash
-cd crates/whis-desktop/ui
 npm run build
 ```
 
-Vite compiles to `ui/dist/`. Tauri's build process (in `build.rs`) copies this into the final binary.
-
-## Component Deep Dive: ShortcutView
-
-Let's examine the most complex view—ShortcutView—which handles three different shortcut backends:
-
-### Backend Detection
-
-On mount, ShortcutView receives `backendInfo` prop from App.vue:
-
-```typescript
-const props = defineProps<{
-  backendInfo: BackendInfo | null;
-  currentShortcut: string;
-  portalShortcut: string | null;
-  portalBindError: string | null;
-}>();
-```
-
-**From `whis-desktop/ui/src/views/ShortcutView.vue:17-22`**
-
-The template has three sections based on backend:
-
-```vue
-<!-- Portal backend (Wayland) -->
-<template v-if="backendInfo?.backend === 'PortalGlobalShortcuts'">
-  <!-- Portal-specific UI -->
-</template>
-
-<!-- Manual Setup (Wayland without portal) -->
-<template v-else-if="backendInfo?.backend === 'ManualSetup'">
-  <!-- Manual config instructions -->
-</template>
-
-<!-- Tauri plugin (X11/macOS/Windows) -->
-<template v-else>
-  <!-- Simple key capture -->
-</template>
-```
-
-**From `whis-desktop/ui/src/views/ShortcutView.vue:186-354`**
-
-### Key Capture (X11/macOS)
-
-For TauriPlugin backend, users can capture keys directly:
-
-```vue
-<div
-  class="shortcut-input"
-  :class="{ recording: isRecording }"
-  @click="startRecording"
-  @blur="stopRecording"
-  @keydown="handleKeyDown"
-  tabindex="0"
->
-  <div class="keys">
-    <span v-for="(key, index) in shortcutKeys" :key="index" class="key">
-      {{ key }}
-    </span>
-  </div>
-  <span v-if="isRecording" class="recording-dot"></span>
-</div>
-```
-
-**From `whis-desktop/ui/src/views/ShortcutView.vue:325-342`**
-
-Click activates recording mode. The `handleKeyDown` listener captures the key combo:
-
-```typescript
-function handleKeyDown(e: KeyboardEvent) {
-  if (!isRecording.value) return;
-  e.preventDefault();
-
-  const keys = [];
-  if (e.ctrlKey) keys.push('Ctrl');
-  if (e.shiftKey) keys.push('Shift');
-  if (e.altKey) keys.push('Alt');
-  if (e.metaKey) keys.push('Super');
-
-  const key = e.key.toUpperCase();
-  if (!['CONTROL', 'SHIFT', 'ALT', 'META'].includes(key)) {
-    keys.push(key);
-  }
-
-  if (keys.length > 0) {
-    emit('update:currentShortcut', keys.join('+'));
-  }
-}
-```
-
-**From `whis-desktop/ui/src/views/ShortcutView.vue:146-164`**
-
-This builds a string like `"Ctrl+Shift+R"`, which is emitted back to App.vue.
-
-### Portal Configuration (Wayland/GNOME)
-
-For Portal backend, the flow is different:
-
-1. **Capture key combo** (same as above)
-2. **Click Apply** button
-3. **Call `configure_shortcut_with_trigger` command**
-4. **Wait for portal dialog** (GNOME shows system settings)
-5. **Portal returns actual binding** (may differ if conflict)
-
-```typescript
-async function configureWithCapturedKey() {
-  try {
-    status.value = "Configuring...";
-    const newBinding = await invoke<string | null>('configure_shortcut_with_trigger', {
-      trigger: props.currentShortcut
-    });
-    if (newBinding) {
-      emit('update:portalShortcut', newBinding);
-      status.value = "Configured!";
-    } else {
-      status.value = "Cancelled";
-    }
-  } catch (e) {
-    status.value = "Failed: " + e;
-  }
-}
-```
-
-**From `whis-desktop/ui/src/views/ShortcutView.vue:119-140`**
-
-If successful, `portalShortcut` is updated and the UI switches to "bound" mode, showing the actual shortcut and a Reset button.
-
-### Manual Setup Instructions (Sway/Hyprland)
-
-For ManualSetup backend, ShortcutView displays compositor-specific instructions:
-
-```vue
-<template v-if="backendInfo.compositor.toLowerCase().includes('sway')">
-  <p class="hint">Add to <code>~/.config/sway/config</code>:</p>
-  <div class="command">
-    <code>bindsym {{ currentShortcut.toLowerCase() }} exec {{ toggleCommand }}</code>
-  </div>
-</template>
-```
-
-**From `whis-desktop/ui/src/views/ShortcutView.vue:296-301`**
-
-The `toggleCommand` is fetched on mount:
-
-```typescript
-onMounted(async () => {
-  try {
-    toggleCommand.value = await invoke<string>('get_toggle_command');
-  } catch (e) {
-    console.error('Failed to get toggle command:', e);
-  }
-});
-```
-
-**From `whis-desktop/ui/src/views/ShortcutView.vue:34-40`**
-
-This returns platform-specific command (on Linux: `whis-desktop --toggle`, on macOS: `/Applications/Whis.app/Contents/MacOS/whis-desktop --toggle`).
-
-## Testing the UI
-
-During development, test the UI in isolation:
-
-```bash
-cd crates/whis-desktop/ui
-npm run dev
-```
-
-Visit `http://localhost:5173`. You'll see the UI, but Tauri commands will fail (no Rust backend). To test with Rust:
-
-```bash
-cd crates/whis-desktop
-cargo tauri dev
-```
-
-This compiles Rust, starts Vite, and launches the app. Hot reload works for both Rust (needs recompile) and Vue (instant HMR).
+Vite compiles to `ui/dist/`. Tauri's build process embeds this in the final binary.
 
 ## Summary
 
 **Key Takeaways:**
 
-1. **Vapor Mode**: Vue 3.6 alpha with no Virtual DOM—compiled reactivity for smaller bundles
-2. **Component structure**: App.vue manages top-level state, views handle UI logic
-3. **Tauri API**: `invoke()` calls Rust commands with full type safety
-4. **No store needed**: Props/emits handle state, Rust is source of truth
-5. **Platform awareness**: UI adapts to backend (TauriPlugin/Portal/Manual)
-6. **Vite + Rolldown**: Fast dev server and Rust-powered bundling
+1. **Vue Router**: Hash mode for Tauri, lazy-loaded routes
+2. **Custom store**: Lightweight reactive state with `reactive()` and `readonly()`
+3. **Composables**: Reusable logic (`useKeyboardCapture`, `useAsyncOperation`)
+4. **Tauri API**: `invoke()` for type-safe Rust command calls
+5. **Component library**: Consistent UI with AppButton, AppInput, etc.
+6. **CSS custom properties**: Design system with dark theme and gold accent
 
 **Where This Matters in Whis:**
 
-- ShortcutView shows different UI based on platform capabilities
-- HomeView polls recording state to keep UI in sync
-- ApiKeyView validates keys before calling Rust
-- Window controls handle platform-specific decoration needs
+- Router config: `ui/src/router/index.ts`
+- Settings state: `ui/src/stores/settings.ts`
+- Composables: `ui/src/composables/`
+- Reusable components: `ui/src/components/`
+- Views: `ui/src/views/`
 
 **Patterns Used:**
 
-- **Props down, events up**: Standard Vue pattern for data flow
-- **Conditional rendering**: Different sections based on backend
-- **Polling**: Simple state sync for infrequent updates
-- **Computed properties**: Derived state for shortcut formatting
+- **Centralized store**: Single source of truth for settings
+- **Composables**: Extract and reuse reactive logic
+- **Props down, events up**: Data flow for component communication
+- **Lazy loading**: Route-based code splitting
 
 **Design Decisions:**
 
-1. **Why Vapor Mode?** Hobby project, chance to experiment with Vue's future.
-2. **Why no Vue Router?** Small app, conditional rendering is simpler.
-3. **Why no Pinia?** Rust backend is source of truth, no need for client store.
-4. **Why polling over events?** Simplicity for infrequent state changes.
-5. **Why rolldown-vite?** Faster builds, better Vite 7+ integration.
-
-This completes Part VII: Vue Frontend. Next, we'll explore common patterns and best practices across the entire Whis codebase.
+1. **Why not Pinia?** Small app, Rust is source of truth, custom store is simpler
+2. **Why hash mode?** Tauri loads from files, no server routing
+3. **Why composables?** Extract keyboard capture, async state—reusable across views
+4. **Why custom components?** Consistent styling, reduced duplication
 
 ---
 

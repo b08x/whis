@@ -12,7 +12,7 @@ cd docker
 docker compose up -d
 
 # Pull a polish model (one-time)
-docker exec -it whis-ollama ollama pull phi3
+docker exec -it whis-ollama ollama pull ministral-3:3b
 
 # Configure whis CLI
 whis config --provider remote-whisper
@@ -32,7 +32,7 @@ cd docker
 docker compose -f docker-compose.cpu.yml up -d
 
 # Pull a polish model
-docker exec -it whis-ollama ollama pull phi3
+docker exec -it whis-ollama ollama pull ministral-3:3b
 
 # Configure whis
 whis config --provider remote-whisper
@@ -82,9 +82,8 @@ Local LLM server for transcript polishing.
 - GPU acceleration
 
 Recommended models:
-- `phi3` - Default, fast, good quality
-- `llama3.2:3b` - Larger, better quality
-- `mistral` - Alternative option
+- `ministral-3:3b` - Default, Mistral's edge-optimized 3B model
+- `mistral` - Higher quality, needs more RAM (8-16GB)
 
 ## Configuration
 
@@ -97,8 +96,8 @@ export REMOTE_WHISPER_URL=http://localhost:8765
 # Ollama server URL (default: http://localhost:11434)
 export OLLAMA_URL=http://localhost:11434
 
-# Ollama model (default: phi3)
-export OLLAMA_MODEL=phi3
+# Ollama model (default: ministral-3:3b)
+export OLLAMA_MODEL=ministral-3:3b
 ```
 
 ### CLI Configuration
@@ -111,7 +110,7 @@ whis config --remote-whisper-url http://localhost:8765
 # Set polisher to Ollama
 whis config --polisher ollama
 whis config --ollama-url http://localhost:11434
-whis config --ollama-model phi3
+whis config --ollama-model ministral-3:3b
 
 # View current config
 whis config --show
@@ -164,7 +163,7 @@ docker compose up -d
 
 1. Check if Ollama is running: `docker ps`
 2. Check if model is pulled: `docker exec whis-ollama ollama list`
-3. Pull the model: `docker exec whis-ollama ollama pull phi3`
+3. Pull the model: `docker exec whis-ollama ollama pull ministral-3:3b`
 
 ### GPU not detected
 

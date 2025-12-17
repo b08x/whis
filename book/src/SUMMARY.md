@@ -40,6 +40,7 @@
 - [Chapter 13: Audio Encoding](./part4-core-advanced/ch13-encoding.md)
 - [Chapter 14: The Provider System](./part4-core-advanced/ch14-providers.md)
 - [Chapter 14b: Local Transcription](./part4-core-advanced/ch14b-local-transcription.md)
+- [Chapter 14c: The Preset System](./part4-core-advanced/ch14c-presets.md)
 - [Chapter 15: Parallel Transcription](./part4-core-advanced/ch15-parallel.md)
 
 ---

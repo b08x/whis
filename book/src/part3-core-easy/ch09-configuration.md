@@ -57,7 +57,7 @@ Here's what `~/.config/whis/settings.json` looks like:
   "polish_prompt": null,
   "whisper_model_path": null,
   "ollama_url": "http://localhost:11434",
-  "ollama_model": "phi3",
+  "ollama_model": "ministral-3:3b",
   "remote_whisper_url": null
 }
 ```
@@ -291,7 +291,7 @@ pub ollama_model: Option<String>,
 | Model path | `--whisper-model-path` | `WHISPER_MODEL_PATH` | None |
 | Server URL | `--remote-whisper-url` | `REMOTE_WHISPER_URL` | None |
 | Ollama URL | `--ollama-url` | `OLLAMA_URL` | `http://localhost:11434` |
-| Ollama model | `--ollama-model` | `OLLAMA_MODEL` | `phi3` |
+| Ollama model | `--ollama-model` | `OLLAMA_MODEL` | `ministral-3:3b` |
 
 See [Chapter 14b: Local Transcription](../part4-core-advanced/ch14b-local-transcription.md) for setup instructions.
 
