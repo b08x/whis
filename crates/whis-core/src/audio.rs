@@ -59,12 +59,21 @@ impl AudioRecorder {
             .default_input_device()
             .context("No input device available")?;
 
+        let device_name = device.name().unwrap_or_else(|_| "<unknown>".to_string());
+        crate::verbose!("Audio device: {}", device_name);
+
         let config = device
             .default_input_config()
             .context("Failed to get default input config")?;
 
         self.sample_rate = config.sample_rate().0;
         self.channels = config.channels();
+
+        crate::verbose!(
+            "Audio config: {} Hz, {} channel(s)",
+            self.sample_rate,
+            self.channels
+        );
 
         let samples = self.samples.clone();
         samples.lock().unwrap().clear();
@@ -130,8 +139,12 @@ impl AudioRecorder {
         };
 
         if samples.is_empty() {
+            crate::verbose!("No audio samples captured");
             anyhow::bail!("No audio data recorded");
         }
+
+        let duration_secs = samples.len() as f32 / self.sample_rate as f32 / self.channels as f32;
+        crate::verbose!("Recorded {} samples ({:.1}s)", samples.len(), duration_secs);
 
         Ok(RecordingData {
             samples,

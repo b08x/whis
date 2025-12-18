@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
+use crate::clipboard::ClipboardMethod;
 use crate::config::TranscriptionProvider;
 use crate::polish::Polisher;
 
@@ -42,6 +43,9 @@ pub struct Settings {
     /// Currently active preset name (if any)
     #[serde(default)]
     pub active_preset: Option<String>,
+    /// Clipboard method for copying text (auto, xclip, wl-copy, arboard)
+    #[serde(default)]
+    pub clipboard_method: ClipboardMethod,
 }
 
 impl Default for Settings {
@@ -58,6 +62,7 @@ impl Default for Settings {
             ollama_model: None,
             remote_whisper_url: None,
             active_preset: None,
+            clipboard_method: ClipboardMethod::default(),
         }
     }
 }

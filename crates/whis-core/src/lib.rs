@@ -10,10 +10,11 @@ pub mod provider;
 pub mod resample;
 pub mod settings;
 pub mod transcribe;
+pub mod verbose;
 
 pub use audio::{AudioChunk, AudioRecorder, RecordingData, RecordingOutput};
 #[cfg(feature = "clipboard")]
-pub use clipboard::copy_to_clipboard;
+pub use clipboard::{ClipboardMethod, copy_to_clipboard};
 pub use config::TranscriptionProvider;
 pub use polish::{DEFAULT_POLISH_PROMPT, Polisher, polish};
 pub use preset::{Preset, PresetSource};
@@ -22,3 +23,4 @@ pub use provider::{
 };
 pub use settings::Settings;
 pub use transcribe::{ChunkTranscription, parallel_transcribe, transcribe_audio};
+pub use verbose::set_verbose;

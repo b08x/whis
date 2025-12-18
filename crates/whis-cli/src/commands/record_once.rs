@@ -90,12 +90,21 @@ pub fn run(polish_flag: bool, preset_name: Option<String>) -> Result<()> {
     io::stdout().flush()?;
     app::wait_for_enter()?;
 
+    // In verbose mode, print newline so verbose output appears cleanly
+    if whis_core::verbose::is_verbose() {
+        println!();
+    }
+
     // Finalize recording and get output
     let audio_result = recorder.finalize_recording()?;
 
     // Transcribe based on output type
-    // Continue on same line (raw mode doesn't echo newline)
-    app::typewriter(" Transcribing...", 25);
+    if whis_core::verbose::is_verbose() {
+        println!("Transcribing...");
+    } else {
+        // Continue on same line (raw mode doesn't echo newline)
+        app::typewriter(" Transcribing...", 25);
+    }
     let transcription = match audio_result {
         RecordingOutput::Single(audio_data) => {
             // Small file - simple transcription
@@ -205,10 +214,14 @@ pub fn run(polish_flag: bool, preset_name: Option<String>) -> Result<()> {
     };
 
     // Copy to clipboard
-    copy_to_clipboard(&final_text)?;
+    copy_to_clipboard(&final_text, settings.clipboard_method.clone())?;
 
-    app::typewriter(" Done", 20);
-    println!();  // End the status line
+    if whis_core::verbose::is_verbose() {
+        println!("Done");
+    } else {
+        app::typewriter(" Done", 20);
+        println!(); // End the status line
+    }
     println!("Copied to clipboard");
 
     Ok(())

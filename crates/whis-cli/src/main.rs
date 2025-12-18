@@ -11,6 +11,9 @@ use clap::Parser;
 fn main() -> Result<()> {
     let cli = args::Cli::parse();
 
+    // Enable verbose logging if requested
+    whis_core::set_verbose(cli.verbose);
+
     match cli.command {
         Some(args::Commands::Listen { hotkey }) => commands::listen::run(hotkey),
         Some(args::Commands::Stop) => commands::stop::run(),

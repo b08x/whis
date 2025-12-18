@@ -260,10 +260,11 @@ async fn do_transcription(app: &AppHandle, state: &AppState) -> Result<(), Strin
         }
     };
 
-    // Extract polishing config from settings (lock scope limited)
-    let polish_config = {
+    // Extract polishing config and clipboard method from settings (lock scope limited)
+    let (polish_config, clipboard_method) = {
         let settings = state.settings.lock().unwrap();
-        if settings.polisher != Polisher::None {
+        let clipboard_method = settings.clipboard_method.clone();
+        let polish_config = if settings.polisher != Polisher::None {
             let polisher = settings.polisher.clone();
             let prompt = settings
                 .polish_prompt
@@ -286,7 +287,8 @@ async fn do_transcription(app: &AppHandle, state: &AppState) -> Result<(), Strin
             api_key_or_url.map(|key_or_url| (polisher, prompt, ollama_model, key_or_url))
         } else {
             None
-        }
+        };
+        (polish_config, clipboard_method)
     };
 
     // Apply polishing if enabled (outside of lock scope)
@@ -298,8 +300,11 @@ async fn do_transcription(app: &AppHandle, state: &AppState) -> Result<(), Strin
                 eprintln!("Polish warning: {warning}");
                 let _ = app.emit("polish-warning", &warning);
                 // Skip polishing, return raw transcription
-                copy_to_clipboard(&transcription).map_err(|e| e.to_string())?;
-                println!("Done (unpolished): {}", &transcription[..transcription.len().min(50)]);
+                copy_to_clipboard(&transcription, clipboard_method).map_err(|e| e.to_string())?;
+                println!(
+                    "Done (unpolished): {}",
+                    &transcription[..transcription.len().min(50)]
+                );
                 let _ = app.emit("transcription-complete", &transcription);
                 return Ok(());
             }
@@ -328,7 +333,7 @@ async fn do_transcription(app: &AppHandle, state: &AppState) -> Result<(), Strin
     };
 
     // Copy to clipboard
-    copy_to_clipboard(&final_text).map_err(|e| e.to_string())?;
+    copy_to_clipboard(&final_text, clipboard_method).map_err(|e| e.to_string())?;
 
     println!("Done: {}", &final_text[..final_text.len().min(50)]);
 

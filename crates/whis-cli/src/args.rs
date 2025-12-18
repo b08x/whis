@@ -9,6 +9,10 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
 
+    /// Enable verbose output for debugging (audio device, clipboard, etc.)
+    #[arg(short, long, global = true)]
+    pub verbose: bool,
+
     /// Polish transcript with LLM (cleanup grammar, filler words)
     #[arg(long)]
     pub polish: bool,

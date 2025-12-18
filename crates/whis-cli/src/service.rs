@@ -46,10 +46,7 @@ impl Service {
 
         // Show startup message with shortcut hint
         let settings = Settings::load();
-        println!(
-            "Press {} to record. Ctrl+C to stop.",
-            settings.shortcut
-        );
+        println!("Press {} to record. Ctrl+C to stop.", settings.shortcut);
 
         loop {
             // Check for incoming IPC connections (non-blocking)
@@ -233,7 +230,8 @@ impl Service {
         };
 
         // Copy to clipboard (blocking operation)
-        tokio::task::spawn_blocking(move || copy_to_clipboard(&final_text))
+        let clipboard_method = settings.clipboard_method.clone();
+        tokio::task::spawn_blocking(move || copy_to_clipboard(&final_text, clipboard_method))
             .await
             .context("Failed to join task")??;
 
