@@ -12,7 +12,7 @@ pub mod settings;
 pub mod transcribe;
 pub mod verbose;
 
-pub use audio::{AudioChunk, AudioRecorder, RecordingData, RecordingOutput};
+pub use audio::{AudioChunk, AudioRecorder, RecordingData, RecordingOutput, load_audio_file, load_audio_stdin};
 #[cfg(feature = "clipboard")]
 pub use clipboard::{ClipboardMethod, copy_to_clipboard};
 pub use config::TranscriptionProvider;

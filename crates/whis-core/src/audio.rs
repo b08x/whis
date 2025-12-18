@@ -1,5 +1,7 @@
 use anyhow::{Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use std::io::Read;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 /// Threshold for chunking (files larger than this get split)
@@ -370,4 +372,200 @@ impl RecordingData {
 
         Ok(mp3_data)
     }
+}
+
+/// Load audio from a file, converting to MP3 if needed
+#[cfg(feature = "ffmpeg")]
+pub fn load_audio_file(path: &Path) -> Result<RecordingOutput> {
+    let extension = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let mp3_data = match extension.as_str() {
+        "mp3" => {
+            // Read MP3 directly
+            std::fs::read(path).context("Failed to read MP3 file")?
+        }
+        "wav" | "m4a" | "ogg" | "flac" | "webm" | "aac" | "opus" => {
+            // Convert to MP3 using FFmpeg
+            convert_file_to_mp3(path)?
+        }
+        _ => {
+            anyhow::bail!(
+                "Unsupported audio format: '{}'. Supported: mp3, wav, m4a, ogg, flac, webm, aac, opus",
+                extension
+            );
+        }
+    };
+
+    classify_recording_output(mp3_data)
+}
+
+#[cfg(not(feature = "ffmpeg"))]
+pub fn load_audio_file(_path: &Path) -> Result<RecordingOutput> {
+    anyhow::bail!("File input requires the 'ffmpeg' feature (not available in mobile builds)")
+}
+
+/// Load audio from stdin
+#[cfg(feature = "ffmpeg")]
+pub fn load_audio_stdin(format: &str) -> Result<RecordingOutput> {
+    let mut data = Vec::new();
+    std::io::stdin()
+        .read_to_end(&mut data)
+        .context("Failed to read audio from stdin")?;
+
+    if data.is_empty() {
+        anyhow::bail!("No audio data received from stdin");
+    }
+
+    let mp3_data = match format.to_lowercase().as_str() {
+        "mp3" => data, // Already MP3
+        "wav" | "m4a" | "ogg" | "flac" | "webm" | "aac" | "opus" => {
+            // Convert stdin data to MP3 using FFmpeg
+            convert_stdin_to_mp3(&data, format)?
+        }
+        _ => {
+            anyhow::bail!(
+                "Unsupported stdin format: '{}'. Supported: mp3, wav, m4a, ogg, flac, webm, aac, opus",
+                format
+            );
+        }
+    };
+
+    classify_recording_output(mp3_data)
+}
+
+#[cfg(not(feature = "ffmpeg"))]
+pub fn load_audio_stdin(_format: &str) -> Result<RecordingOutput> {
+    anyhow::bail!("Stdin input requires the 'ffmpeg' feature (not available in mobile builds)")
+}
+
+/// Classify MP3 data into Single or Chunked based on size
+fn classify_recording_output(mp3_data: Vec<u8>) -> Result<RecordingOutput> {
+    if mp3_data.len() <= CHUNK_THRESHOLD_BYTES {
+        Ok(RecordingOutput::Single(mp3_data))
+    } else {
+        // For pre-encoded MP3 files, we can't easily split by time
+        // For now, just use as single file - chunking is mainly for recordings
+        // where we have raw samples and can calculate exact time boundaries
+        crate::verbose!(
+            "Large file ({:.1} MB) - processing as single file",
+            mp3_data.len() as f64 / 1024.0 / 1024.0
+        );
+        Ok(RecordingOutput::Single(mp3_data))
+    }
+}
+
+/// Convert an audio file to MP3 using FFmpeg
+#[cfg(feature = "ffmpeg")]
+fn convert_file_to_mp3(input_path: &Path) -> Result<Vec<u8>> {
+    let temp_dir = std::env::temp_dir();
+    let unique_id = format!(
+        "{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    );
+    let mp3_path = temp_dir.join(format!("whis_convert_{unique_id}.mp3"));
+
+    crate::verbose!("Converting {} to MP3...", input_path.display());
+
+    let output = std::process::Command::new("ffmpeg")
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            input_path.to_str().unwrap(),
+            "-codec:a",
+            "libmp3lame",
+            "-b:a",
+            "128k",
+            "-y",
+            mp3_path.to_str().unwrap(),
+        ])
+        .output()
+        .context("Failed to execute ffmpeg. Make sure ffmpeg is installed.")?;
+
+    if !output.status.success() {
+        let _ = std::fs::remove_file(&mp3_path);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("FFmpeg conversion failed: {stderr}");
+    }
+
+    let mp3_data = std::fs::read(&mp3_path).context("Failed to read converted MP3 file")?;
+    let _ = std::fs::remove_file(&mp3_path);
+
+    crate::verbose!("Converted to {:.1} KB MP3", mp3_data.len() as f64 / 1024.0);
+
+    Ok(mp3_data)
+}
+
+/// Convert stdin audio data to MP3 using FFmpeg
+#[cfg(feature = "ffmpeg")]
+fn convert_stdin_to_mp3(data: &[u8], format: &str) -> Result<Vec<u8>> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let temp_dir = std::env::temp_dir();
+    let unique_id = format!(
+        "{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    );
+    let mp3_path = temp_dir.join(format!("whis_stdin_{unique_id}.mp3"));
+
+    crate::verbose!("Converting stdin ({} format) to MP3...", format);
+
+    // Use FFmpeg with pipe input
+    let mut child = Command::new("ffmpeg")
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            format,
+            "-i",
+            "pipe:0", // Read from stdin
+            "-codec:a",
+            "libmp3lame",
+            "-b:a",
+            "128k",
+            "-y",
+            mp3_path.to_str().unwrap(),
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("Failed to spawn ffmpeg process")?;
+
+    // Write input data to FFmpeg's stdin
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(data)
+            .context("Failed to write audio data to ffmpeg")?;
+    }
+
+    let output = child.wait_with_output()?;
+
+    if !output.status.success() {
+        let _ = std::fs::remove_file(&mp3_path);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("FFmpeg stdin conversion failed: {stderr}");
+    }
+
+    let mp3_data = std::fs::read(&mp3_path).context("Failed to read converted MP3 file")?;
+    let _ = std::fs::remove_file(&mp3_path);
+
+    crate::verbose!("Converted to {:.1} KB MP3", mp3_data.len() as f64 / 1024.0);
+
+    Ok(mp3_data)
 }

@@ -40,17 +40,23 @@ struct PullProgress {
 }
 
 /// Check if Ollama is reachable at the given URL
-pub fn is_ollama_running(url: &str) -> bool {
+///
+/// Returns `Ok(true)` if connected successfully, or an error with details about why
+/// the connection failed (not running, not installed, connection refused, etc.)
+pub fn is_ollama_running(url: &str) -> Result<bool, String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(2))
         .build()
-        .ok();
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
-    if let Some(client) = client {
-        let tags_url = format!("{}/api/tags", url.trim_end_matches('/'));
-        client.get(&tags_url).send().is_ok()
-    } else {
-        false
+    let tags_url = format!("{}/api/tags", url.trim_end_matches('/'));
+
+    match client.get(&tags_url).send() {
+        Ok(resp) if resp.status().is_success() => Ok(true),
+        Ok(resp) => Err(format!("Ollama returned status {}", resp.status())),
+        Err(e) if e.is_connect() => Err("Connection refused - Ollama not running".to_string()),
+        Err(e) if e.is_timeout() => Err("Connection timed out".to_string()),
+        Err(e) => Err(format!("Failed to connect: {}", e)),
     }
 }
 
@@ -70,7 +76,7 @@ pub fn is_ollama_installed() -> bool {
 /// Returns Err if Ollama couldn't be started.
 pub fn ensure_ollama_running(url: &str) -> Result<bool> {
     // Already running?
-    if is_ollama_running(url) {
+    if is_ollama_running(url).unwrap_or(false) {
         return Ok(false);
     }
 
@@ -129,7 +135,7 @@ pub fn ensure_ollama_running(url: &str) -> Result<bool> {
     // Wait for Ollama to become ready
     let start = Instant::now();
     while start.elapsed() < STARTUP_TIMEOUT {
-        if is_ollama_running(url) {
+        if is_ollama_running(url).unwrap_or(false) {
             eprintln!("Ollama server started.");
             return Ok(true);
         }

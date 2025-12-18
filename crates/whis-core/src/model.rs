@@ -82,11 +82,7 @@ pub fn download_model(model_name: &str, dest: &Path) -> Result<()> {
 ///
 /// The callback receives (downloaded_bytes, total_bytes) and is called
 /// approximately every 1% of progress or every 500KB, whichever is more frequent.
-pub fn download_model_with_progress<F>(
-    model_name: &str,
-    dest: &Path,
-    on_progress: F,
-) -> Result<()>
+pub fn download_model_with_progress<F>(model_name: &str, dest: &Path, on_progress: F) -> Result<()>
 where
     F: Fn(u64, u64),
 {

@@ -247,11 +247,12 @@ impl Preset {
     pub fn save(&self) -> Result<(), String> {
         // Ensure presets directory exists
         let dir = Self::presets_dir();
-        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create presets directory: {}", e))?;
+        fs::create_dir_all(&dir)
+            .map_err(|e| format!("Failed to create presets directory: {}", e))?;
 
         let path = dir.join(format!("{}.json", self.name));
-        let content =
-            serde_json::to_string_pretty(self).map_err(|e| format!("Failed to serialize: {}", e))?;
+        let content = serde_json::to_string_pretty(self)
+            .map_err(|e| format!("Failed to serialize: {}", e))?;
 
         fs::write(&path, content).map_err(|e| format!("Failed to write preset file: {}", e))?;
 
