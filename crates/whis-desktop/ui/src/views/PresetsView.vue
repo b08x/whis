@@ -2,7 +2,8 @@
 import { ref, onMounted, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { settingsStore } from '../stores/settings'
-import type { PresetInfo, PresetDetails } from '../types'
+import { AppSelect } from '../components'
+import type { PresetInfo, PresetDetails, SelectOption } from '../types'
 
 // List state
 const presets = ref<PresetInfo[]>([]);
@@ -28,6 +29,15 @@ const error = ref<string | null>(null);
 // Delete confirmation
 const confirmingDelete = ref(false);
 const deleting = ref(false);
+
+// Polisher options for select
+const polisherOptions: SelectOption[] = [
+  { value: null, label: 'Use default' },
+  { value: 'none', label: 'None (raw transcript)' },
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'mistral', label: 'Mistral' },
+  { value: 'ollama', label: 'Ollama' },
+]
 
 // Computed
 const isEditing = computed(() => panelMode.value === 'edit' || panelMode.value === 'create');
@@ -83,6 +93,15 @@ function openCreate() {
 function closePanel() {
   panelOpen.value = false;
   confirmingDelete.value = false;
+}
+
+// Toggle panel (for header button)
+function togglePanel() {
+  if (panelOpen.value) {
+    closePanel();
+  } else {
+    openCreate();
+  }
 }
 
 // Start editing
@@ -206,18 +225,18 @@ onMounted(loadPresets);
 <template>
   <section class="section presets-section">
     <header class="section-header">
-      <h1>Presets</h1>
-      <p>One-click configurations for different use cases</p>
+      <div class="header-title">
+        <h1>Presets</h1>
+        <p>One-click configurations for different use cases</p>
+      </div>
+      <button class="panel-toggle-btn" @click="togglePanel" :aria-label="panelOpen ? 'Close panel' : 'New preset'">
+        {{ panelOpen ? '[x]' : '[+]' }}
+      </button>
     </header>
 
     <div class="presets-layout">
       <!-- Presets list -->
       <div class="presets-list-container">
-        <!-- New preset button -->
-        <button class="new-preset-btn" @click="openCreate">
-          [+] New preset
-        </button>
-
         <!-- Loading state -->
         <div v-if="loading" class="loading">
           Loading presets...
@@ -264,7 +283,6 @@ onMounted(loadPresets);
             <h2 v-if="panelMode === 'create'">New Preset</h2>
             <h2 v-else-if="isEditing">Edit Preset</h2>
             <h2 v-else>{{ selectedPreset?.name }}</h2>
-            <button class="close-btn" @click="closePanel">[x]</button>
           </div>
 
           <!-- Loading state -->
@@ -374,14 +392,13 @@ onMounted(loadPresets);
               <summary>Advanced options</summary>
 
               <div class="edit-field">
-                <label for="edit-polisher">Polisher override</label>
-                <select id="edit-polisher" v-model="editPolisher">
-                  <option :value="null">Use default</option>
-                  <option value="none">None (raw transcript)</option>
-                  <option value="openai">OpenAI</option>
-                  <option value="mistral">Mistral</option>
-                  <option value="ollama">Ollama</option>
-                </select>
+                <label>Polisher override</label>
+                <AppSelect
+                  :model-value="editPolisher"
+                  :options="polisherOptions"
+                  aria-label="Polisher override"
+                  @update:model-value="editPolisher = $event"
+                />
               </div>
 
               <div class="edit-field">
@@ -441,24 +458,31 @@ onMounted(loadPresets);
   padding-right: 16px;
 }
 
-.new-preset-btn {
-  display: inline-flex;
-  align-items: center;
-  padding: 10px 16px;
-  background: transparent;
-  border: 1px dashed var(--border);
-  border-radius: 4px;
-  font-family: var(--font);
-  font-size: 12px;
-  color: var(--text-weak);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  align-self: flex-start;
+/* Header with toggle button */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
 }
 
-.new-preset-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+.header-title {
+  display: flex;
+  flex-direction: column;
+}
+
+.panel-toggle-btn {
+  background: none;
+  border: none;
+  font-family: var(--font);
+  font-size: 14px;
+  color: var(--text-weak);
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: color 0.15s ease;
+}
+
+.panel-toggle-btn:hover {
+  color: var(--text);
 }
 
 .loading {
@@ -596,20 +620,6 @@ onMounted(loadPresets);
   font-weight: 600;
   color: var(--text-strong);
   margin: 0;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  font-family: var(--font);
-  font-size: 14px;
-  color: var(--text-weak);
-  cursor: pointer;
-  padding: 4px 8px;
-}
-
-.close-btn:hover {
-  color: var(--text);
 }
 
 .panel-loading,

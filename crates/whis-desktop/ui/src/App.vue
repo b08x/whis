@@ -137,6 +137,9 @@ onMounted(async () => {
   /* Typography */
   --font: "JetBrains Mono", "Fira Code", "SF Mono", ui-monospace, monospace;
   --line-height: 1.6;
+
+  /* Layout */
+  --field-label-width: 100px;
 }
 
 * {

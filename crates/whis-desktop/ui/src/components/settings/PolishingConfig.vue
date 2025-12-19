@@ -53,7 +53,7 @@ function getDefaultPolisher(): Polisher {
   const provider = settingsStore.state.provider
   if (provider === 'openai') return 'openai'
   if (provider === 'mistral') return 'mistral'
-  if (provider === 'local-whisper' || provider === 'remote-whisper') return 'ollama'
+  if (provider === 'local-whisper') return 'ollama'
   // Default fallback
   return 'openai'
 }
@@ -81,9 +81,12 @@ function goToPresets() {
 
 <template>
   <div class="polishing-section">
-    <!-- Simple Toggle Row -->
+    <!-- Toggle Row with Description -->
     <div class="toggle-row">
-      <label>Polishing</label>
+      <div class="toggle-info">
+        <label>Polishing</label>
+        <span class="toggle-desc">Clean up with AI</span>
+      </div>
       <button
         class="toggle-switch"
         :class="{ active: polishingEnabled }"
@@ -125,8 +128,11 @@ function goToPresets() {
       </p>
     </div>
 
-    <!-- Ollama Config (shown inline when Ollama selected) -->
-    <OllamaConfig v-if="polishingEnabled && polisher === 'ollama'" />
+    <!-- Ollama Config (shown when Ollama selected) -->
+    <div v-if="polishingEnabled && polisher === 'ollama'" class="ollama-section">
+      <p class="section-label">ollama</p>
+      <OllamaConfig />
+    </div>
   </div>
 </template>
 
@@ -137,6 +143,25 @@ function goToPresets() {
   gap: 12px;
 }
 
+/* Section Label */
+.section-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-weak);
+  letter-spacing: 0.05em;
+  margin: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Ollama Section */
+.ollama-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+}
+
 /* Toggle Row */
 .toggle-row {
   display: flex;
@@ -145,9 +170,21 @@ function goToPresets() {
   gap: 12px;
 }
 
-.toggle-row > label {
+.toggle-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toggle-info > label {
   font-size: 12px;
   color: var(--text-weak);
+}
+
+.toggle-desc {
+  font-size: 11px;
+  color: var(--text-weak);
+  opacity: 0.7;
 }
 
 /* Toggle Switch */
@@ -188,10 +225,6 @@ function goToPresets() {
 
 /* Config section */
 .polish-config {
-  padding: 12px;
-  background: var(--bg-weak);
-  border: 1px solid var(--border);
-  border-radius: 6px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -204,7 +237,7 @@ function goToPresets() {
 }
 
 .field-row > label {
-  width: 70px;
+  width: var(--field-label-width);
   flex-shrink: 0;
   font-size: 12px;
   color: var(--text-weak);

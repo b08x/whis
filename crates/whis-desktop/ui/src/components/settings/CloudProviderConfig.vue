@@ -74,14 +74,10 @@ function handleApiKeyChange(event: Event) {
 
 <style scoped>
 .config-card {
-  padding: 12px;
-  background: var(--bg-weak);
-  border: 1px solid var(--border);
-  border-radius: 6px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
 .api-key-input {
