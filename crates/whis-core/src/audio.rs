@@ -4,6 +4,56 @@ use std::io::Read;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+/// Suppress ALSA warnings on Linux about unavailable PCM plugins (pulse, jack, oss).
+///
+/// NOTE: This module can be safely removed without affecting functionality.
+/// It only suppresses noisy log output during development (e.g., "Unknown PCM pulse").
+/// The unsafe FFI code here is purely cosmetic - audio works fine without it.
+#[cfg(target_os = "linux")]
+mod alsa_suppress {
+    use std::os::raw::{c_char, c_int};
+    use std::sync::Once;
+
+    // Use a non-variadic function pointer type for the handler.
+    // ALSA's actual signature is variadic, but since our handler ignores all args,
+    // we can use a simpler signature that's compatible at the ABI level.
+    type SndLibErrorHandlerT =
+        unsafe extern "C" fn(*const c_char, c_int, *const c_char, c_int, *const c_char);
+
+    #[link(name = "asound")]
+    unsafe extern "C" {
+        fn snd_lib_error_set_handler(handler: Option<SndLibErrorHandlerT>) -> c_int;
+    }
+
+    // No-op error handler - does nothing, suppresses all ALSA errors
+    unsafe extern "C" fn silent_error_handler(
+        _file: *const c_char,
+        _line: c_int,
+        _function: *const c_char,
+        _err: c_int,
+        _fmt: *const c_char,
+    ) {
+        // Intentionally empty - suppress all ALSA error output
+    }
+
+    static INIT: Once = Once::new();
+
+    pub fn init() {
+        INIT.call_once(|| {
+            // SAFETY: We provide a valid no-op error handler function.
+            // This suppresses ALSA's error messages about unavailable PCM plugins.
+            unsafe {
+                snd_lib_error_set_handler(Some(silent_error_handler));
+            }
+        });
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+mod alsa_suppress {
+    pub fn init() {}
+}
+
 /// Threshold for chunking (files larger than this get split)
 const CHUNK_THRESHOLD_BYTES: usize = 20 * 1024 * 1024; // 20 MB
 /// Duration of each chunk in seconds
@@ -50,6 +100,11 @@ pub struct AudioRecorder {
 // (AudioObjectPropertyListener with FnMut), but we never move the AudioRecorder
 // between threads - it's created, used, and dropped on the same thread.
 // The Mutex only protects against concurrent access within the Tauri async runtime.
+//
+// TODO(macos): Refactor to eliminate this unsafe impl. Possible approaches:
+// 1. Channel-based: Move Stream to dedicated audio thread, communicate via mpsc channels
+// 2. Actor pattern: AudioRecorder sends commands to an actor that owns the Stream
+// Requires macOS hardware for testing.
 #[cfg(target_os = "macos")]
 unsafe impl Send for AudioRecorder {}
 
@@ -71,6 +126,7 @@ impl AudioRecorder {
 
     /// Start recording with a specific device name
     pub fn start_recording_with_device(&mut self, device_name: Option<&str>) -> Result<()> {
+        alsa_suppress::init();
         let host = cpal::default_host();
 
         let device = if let Some(name) = device_name {
@@ -378,7 +434,9 @@ impl RecordingData {
                 .map_err(|e| anyhow::anyhow!("Failed to encode MP3: {:?}", e))?
         };
 
-        // SAFETY: encoder.encode returns the number of bytes written
+        // SAFETY: encoder.encode returns the number of bytes written to the buffer.
+        // The mp3lame-encoder API requires MaybeUninit<u8> output and guarantees
+        // that exactly encoded_size bytes are initialized on success.
         unsafe {
             mp3_data.set_len(encoded_size);
         }
@@ -388,7 +446,8 @@ impl RecordingData {
             .flush::<FlushNoGap>(mp3_data.spare_capacity_mut())
             .map_err(|e| anyhow::anyhow!("Failed to flush MP3 encoder: {:?}", e))?;
 
-        // SAFETY: flush returns the number of bytes written
+        // SAFETY: flush returns the number of additional bytes written.
+        // The encoder guarantees flush_size bytes are initialized.
         unsafe {
             mp3_data.set_len(mp3_data.len() + flush_size);
         }
@@ -602,6 +661,7 @@ pub struct AudioDeviceInfo {
 
 /// List available audio input devices
 pub fn list_audio_devices() -> Result<Vec<AudioDeviceInfo>> {
+    alsa_suppress::init();
     let host = cpal::default_host();
     let default_device_name = host
         .default_input_device()
