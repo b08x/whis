@@ -93,9 +93,9 @@ pub fn ensure_ollama_running(url: &str) -> Result<bool> {
     if !is_ollama_installed() {
         return Err(anyhow!(
             "Ollama is not installed.\n\
-             Install from: https://ollama.ai\n\
+             Install from: https://ollama.com/download\n\
              \n\
-             Linux:   curl -fsSL https://ollama.ai/install.sh | sh\n\
+             Linux:   curl -fsSL https://ollama.com/install.sh | sh\n\
              macOS:   brew install ollama"
         ));
     }

@@ -102,8 +102,14 @@ fn setup_cloud() -> Result<()> {
     println!();
     println!("Setup complete!");
     println!();
-    println!("Provider: {}", provider.display_name());
-    println!("Post-processor: {}", settings.post_processor);
+    println!("Transcription: {}", provider.display_name());
+    if settings.post_processor != PostProcessor::None {
+        if provider == TranscriptionProvider::OpenAI || provider == TranscriptionProvider::Mistral {
+            println!("Post-processing: {} (same API key)", settings.post_processor);
+        } else {
+            println!("Post-processing: {}", settings.post_processor);
+        }
+    }
     println!();
     println!("Try it out:");
     println!("  whis                # Record and transcribe");
@@ -154,9 +160,9 @@ fn setup_local() -> Result<()> {
         println!("Ollama is not installed.");
         println!();
         println!("Install Ollama:");
-        println!("  Linux:  curl -fsSL https://ollama.ai/install.sh | sh");
+        println!("  Linux:  curl -fsSL https://ollama.com/install.sh | sh");
         println!("  macOS:  brew install ollama");
-        println!("  Website: https://ollama.ai");
+        println!("  Website: https://ollama.com/download");
         println!();
         return Err(anyhow!("Please install Ollama and run setup again"));
     }

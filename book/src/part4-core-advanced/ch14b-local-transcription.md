@@ -425,7 +425,7 @@ pub fn ensure_ollama_running(url: &str) -> Result<bool> {
     if !is_ollama_installed() {
         return Err(anyhow!(
             "Ollama is not installed.\n\
-             Install from: https://ollama.ai"
+             Install from: https://ollama.com/download"
         ));
     }
 
@@ -550,7 +550,7 @@ fn setup_local() -> Result<()> {
 
     // Step 2: Setup Ollama
     if !ollama::is_ollama_installed() {
-        return Err(anyhow!("Please install Ollama from https://ollama.ai"));
+        return Err(anyhow!("Please install Ollama from https://ollama.com/download"));
     }
 
     ollama::ensure_ollama_running(ollama::DEFAULT_OLLAMA_URL)?;
