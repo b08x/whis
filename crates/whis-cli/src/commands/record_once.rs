@@ -128,10 +128,11 @@ pub fn run(
 
             if !quiet {
                 if std::io::stdin().is_terminal() {
-                    println!("Recording... Press Enter or {} to stop", hotkey);
+                    println!("Press Enter or {} to stop", hotkey);
                 } else {
-                    println!("Recording... Press {} to stop", hotkey);
+                    println!("Press {} to stop", hotkey);
                 }
+                print!("Recording...");
                 io::stdout().flush()?;
             }
             app::wait_for_stop(hotkey)?;
