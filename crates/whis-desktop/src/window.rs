@@ -9,6 +9,7 @@ pub fn show_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Erro
         .min_inner_size(400.0, 300.0)
         .resizable(true)
         .decorations(false)
+        .transparent(true)
         .visible(false)
         .build()?;
 

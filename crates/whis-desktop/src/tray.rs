@@ -118,6 +118,7 @@ fn open_settings_window(app: AppHandle) {
         .min_inner_size(400.0, 300.0)
         .resizable(true)
         .decorations(false)
+        .transparent(true)
         .build();
 
     // Fix Wayland window dragging by unsetting GTK titlebar
