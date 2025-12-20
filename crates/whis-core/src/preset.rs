@@ -80,8 +80,8 @@ impl Preset {
                 model: None,
             },
             Preset {
-                name: "notes".to_string(),
-                description: "Light cleanup for personal notes".to_string(),
+                name: "default".to_string(),
+                description: "Basic cleanup - fixes grammar and removes filler words".to_string(),
                 prompt: "Lightly clean up this voice transcript for personal notes. \
                     Fix major grammar issues and remove excessive filler words. \
                     Preserve the speaker's natural voice and thought structure. \
