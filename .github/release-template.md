@@ -28,11 +28,27 @@ yay -S whis               # Arch Linux (AUR)
 
 Full-featured GUI with system tray, hotkey support, and auto-paste.
 
-**AppImage (recommended):**
+| Platform | Download |
+|----------|----------|
+| Linux | `Whis_VERSION_amd64.AppImage` |
+| macOS | `Whis_VERSION_x64.dmg` |
+| Windows | `Whis_VERSION_x64-setup.exe` |
+
+> Linux also available as `.deb` and `.rpm`. Windows also available as `.msi`.
+
+**Linux AppImage install:**
 ```bash
 chmod +x Whis_VERSION_amd64.AppImage
 ./Whis_VERSION_amd64.AppImage --install
 # Then launch "Whis" from your app menu
 ```
 
-> Debian (.deb) and RPM packages also available in attached assets.
+---
+
+## 📱 Mobile (Alpha)
+
+> ⚠️ **Early Development** — The Android app is in active development. Features may be incomplete or change without notice. We'd love your feedback!
+
+| Platform | Download |
+|----------|----------|
+| Android | `app-universal-release.apk` |

@@ -46,8 +46,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.prepare.outputs.version_tag }}
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install just
+        uses: extractions/setup-just@v2
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -57,21 +61,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libasound2-dev libx11-dev libxtst-dev
 
-      - name: Publish whis-core
-        run: |
-          echo "Publishing whis-core..."
-          # Use || true to make idempotent (already exists = success)
-          cargo publish -p whis-core --token ${{ secrets.CARGO_REGISTRY_TOKEN }} || true
-
-          # Wait for crates.io index propagation before publishing dependent crate
-          echo "Waiting for crates.io index..."
-          sleep 30
-
-      - name: Publish whis
-        run: |
-          echo "Publishing whis..."
-          # Use || true to make idempotent (already exists = success)
-          cargo publish -p whis --token ${{ secrets.CARGO_REGISTRY_TOKEN }} || true
+      - name: Publish crates
+        run: just publish-crates
 
   build-linux-x86:
     name: "CLI: Linux x86_64"
@@ -79,6 +70,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install just
+        uses: extractions/setup-just@v2
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -89,7 +83,7 @@ jobs:
           sudo apt-get install -y libasound2-dev libx11-dev libxtst-dev
 
       - name: Build
-        run: cargo build --release -p whis
+        run: just build-release-cli
 
       - name: Package
         run: |
@@ -111,6 +105,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install just
+        uses: extractions/setup-just@v2
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -118,7 +115,7 @@ jobs:
         run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Build with cross
-        run: cross build --release --target aarch64-unknown-linux-gnu -p whis
+        run: just build-release-cli-cross aarch64-unknown-linux-gnu
 
       - name: Package
         run: |
@@ -145,13 +142,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install just
+        uses: extractions/setup-just@v2
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }} -p whis
+        run: just build-release-cli-macos ${{ matrix.target }}
 
       - name: Package
         run: |
@@ -173,11 +171,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install just
+        uses: extractions/setup-just@v2
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build
-        run: cargo build --release -p whis
+        run: just build-release-cli
 
       - name: Package
         shell: pwsh
@@ -199,6 +200,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install just
+        uses: extractions/setup-just@v2
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -217,16 +221,11 @@ jobs:
             patchelf \
             libasound2-dev
 
-      - name: Install frontend dependencies
-        working-directory: crates/whis-desktop/ui
-        run: npm ci --legacy-peer-deps
-
       - name: Install Tauri CLI
         run: cargo install tauri-cli
 
       - name: Build desktop app
-        working-directory: crates/whis-desktop
-        run: cargo tauri build
+        run: just build-release-desktop
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v4
@@ -246,9 +245,117 @@ jobs:
           name: whis-desktop-rpm
           path: target/release/bundle/rpm/*.rpm
 
+  build-desktop-windows:
+    name: "Desktop: Windows"
+    needs: [prepare]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli
+
+      - name: Build desktop app
+        run: just build-release-desktop
+
+      - name: Upload MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: whis-desktop-msi
+          path: target/release/bundle/msi/*.msi
+
+      - name: Upload EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: whis-desktop-exe
+          path: target/release/bundle/nsis/*.exe
+
+  build-desktop-macos:
+    name: "Desktop: macOS"
+    needs: [prepare]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli
+
+      - name: Build desktop app
+        run: just build-release-desktop
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: whis-desktop-dmg
+          path: target/release/bundle/dmg/*.dmg
+
+  build-mobile-android:
+    name: "Mobile: Android (Alpha)"
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android targets
+        run: rustup target add aarch64-linux-android armv7-linux-androideabi
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli
+
+      - name: Build mobile app
+        run: just build-mobile
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: whis-mobile-apk
+          path: crates/whis-mobile/gen/android/app/build/outputs/apk/universal/release/*.apk
+
   release:
     name: Create Release
-    needs: [prepare, build-linux-x86, build-linux-arm64, build-macos, build-windows, build-desktop-linux]
+    needs: [prepare, build-linux-x86, build-linux-arm64, build-macos, build-windows, build-desktop-linux, build-desktop-windows, build-desktop-macos, build-mobile-android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -284,6 +391,10 @@ jobs:
             artifacts/**/*.AppImage
             artifacts/**/*.deb
             artifacts/**/*.rpm
+            artifacts/**/*.msi
+            artifacts/**/*.exe
+            artifacts/**/*.dmg
+            artifacts/**/*.apk
           draft: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -292,7 +403,14 @@ jobs:
     name: Publish to AUR
     needs: [prepare, release]
     runs-on: ubuntu-latest
+    env:
+      GIT_SSH_COMMAND: ssh -i ~/.ssh/aur
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -303,52 +421,10 @@ jobs:
           aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN
           EOF
 
-      - name: Clone AUR repo
+      - name: Configure git
         run: |
-          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur" git clone ssh://aur@aur.archlinux.org/whis.git aur-whis
+          git config --global user.email "frank_dierolf@web.de"
+          git config --global user.name "Frank Dierolf - Github Actions"
 
-      - name: Update PKGBUILD
-        env:
-          VERSION_TAG: ${{ needs.prepare.outputs.version_tag }}
-        run: |
-          cd aur-whis
-          VERSION="${VERSION_TAG#v}"
-
-          # Update version (anchored to line start)
-          sed -i "s/^pkgver=.*/pkgver=$VERSION/" PKGBUILD
-
-          # Calculate new checksum
-          TARBALL_URL="https://github.com/frankdierolf/whis/archive/refs/tags/$VERSION_TAG.tar.gz"
-          SHA256=$(curl -sL "$TARBALL_URL" | sha256sum | cut -d' ' -f1)
-          sed -i "s/^sha256sums=.*/sha256sums=('$SHA256')/" PKGBUILD
-
-          # Validate changes
-          if ! grep -q "^pkgver=$VERSION$" PKGBUILD; then
-            echo "ERROR: pkgver update failed"
-            exit 1
-          fi
-          echo "Updated PKGBUILD to version $VERSION with sha256=$SHA256"
-
-      - name: Update .SRCINFO
-        run: |
-          cd aur-whis
-          docker run --rm -v "$PWD:/pkg" archlinux:latest bash -c "
-            pacman -Sy --noconfirm base-devel
-            useradd -m builder
-            chown -R builder:builder /pkg
-            cd /pkg && su builder -c 'makepkg --printsrcinfo > .SRCINFO'
-          "
-          # Fix ownership after Docker (runs as root, changes file ownership)
-          sudo chown -R $(id -u):$(id -g) .
-
-      - name: Push to AUR
-        env:
-          VERSION_TAG: ${{ needs.prepare.outputs.version_tag }}
-        run: |
-          cd aur-whis
-          git config user.email "frank_dierolf@web.de"
-          git config user.name "Frank Dierolf - Github Actions"
-          git add PKGBUILD .SRCINFO
-          # Don't fail if already up to date (idempotent re-runs)
-          git commit -m "Update to $VERSION_TAG" || echo "Already up to date"
-          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur" git push
+      - name: Publish to AUR
+        run: just publish-aur ${{ needs.prepare.outputs.version_tag }}
