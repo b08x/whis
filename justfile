@@ -217,6 +217,98 @@ book-serve: _ensure-mdbook
 install:
     cargo install --path crates/whis-cli
 
+# Install desktop app (Linux: AppImage to ~/.local/bin)
+[linux]
+install-desktop: desktop-build
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Find the built AppImage
+    APPIMAGE=$(find target/release/bundle/appimage -name "*.AppImage" -type f | head -1)
+    if [[ -z "$APPIMAGE" ]]; then
+        echo "Error: No AppImage found. Run 'just desktop-build' first."
+        exit 1
+    fi
+
+    # Install to ~/.local/bin
+    mkdir -p ~/.local/bin
+    cp "$APPIMAGE" ~/.local/bin/Whis.AppImage
+    chmod +x ~/.local/bin/Whis.AppImage
+
+    # Use built-in install for proper desktop integration
+    ~/.local/bin/Whis.AppImage --install
+
+# Install desktop app (macOS: copy .app to /Applications)
+[macos]
+install-desktop: desktop-build
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Find the built .app bundle
+    APP_BUNDLE=$(find target/release/bundle/macos -name "*.app" -type d | head -1)
+    if [[ -z "$APP_BUNDLE" ]]; then
+        echo "Error: No .app bundle found. Run 'just desktop-build' first."
+        exit 1
+    fi
+
+    APP_NAME=$(basename "$APP_BUNDLE")
+
+    # Remove existing installation if present
+    if [[ -d "/Applications/$APP_NAME" ]]; then
+        echo "Removing existing /Applications/$APP_NAME..."
+        rm -rf "/Applications/$APP_NAME"
+    fi
+
+    # Copy to /Applications
+    cp -R "$APP_BUNDLE" /Applications/
+
+    echo "✓ Installed $APP_NAME to /Applications/"
+    echo ""
+    echo "Find 'Whis' in your Applications folder or Spotlight"
+
+# Install desktop app (Windows: run the MSI installer)
+[windows]
+install-desktop: desktop-build
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Find the MSI installer
+    MSI=$(find target/release/bundle/msi -name "*.msi" -type f | head -1 2>/dev/null || true)
+
+    if [[ -n "$MSI" ]]; then
+        echo "Running installer: $MSI"
+        msiexec /i "$MSI"
+    else
+        # Try NSIS exe installer
+        EXE=$(find target/release/bundle/nsis -name "*.exe" -type f | head -1 2>/dev/null || true)
+        if [[ -n "$EXE" ]]; then
+            echo "Running installer: $EXE"
+            "$EXE"
+        else
+            echo "Error: No installer found. Run 'just desktop-build' first."
+            exit 1
+        fi
+    fi
+
+    echo "✓ Whis desktop app installed"
+
+# Uninstall desktop app (Linux)
+[linux]
+uninstall-desktop:
+    #!/usr/bin/env bash
+    # Use built-in uninstall if available
+    if [[ -x ~/.local/bin/Whis.AppImage ]]; then
+        ~/.local/bin/Whis.AppImage --uninstall || true
+    fi
+    rm -f ~/.local/bin/Whis.AppImage
+    echo "✓ Whis desktop app uninstalled"
+
+# Uninstall desktop app (macOS)
+[macos]
+uninstall-desktop:
+    rm -rf "/Applications/Whis.app"
+    echo "✓ Whis desktop app uninstalled"
+
 # Install development tools (skips already-installed)
 install-tools:
     @command -v cargo-tauri >/dev/null 2>&1 || cargo install tauri-cli
