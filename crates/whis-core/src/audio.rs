@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+#[cfg(feature = "ffmpeg")]
 use std::io::Read;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -147,8 +148,14 @@ impl AudioRecorder {
             .default_input_config()
             .context("Failed to get default input config")?;
 
+        // Force mono on Android - emulators and some devices don't support stereo input
+        #[cfg(target_os = "android")]
+        let channels = 1u16;
+        #[cfg(not(target_os = "android"))]
+        let channels = config.channels();
+
         self.sample_rate = config.sample_rate().0;
-        self.channels = config.channels();
+        self.channels = channels;
 
         crate::verbose!(
             "Audio config: {} Hz, {} channel(s)",
@@ -156,18 +163,24 @@ impl AudioRecorder {
             self.channels
         );
 
+        let stream_config = cpal::StreamConfig {
+            channels,
+            sample_rate: config.sample_rate(),
+            buffer_size: cpal::BufferSize::Default,
+        };
+
         let samples = self.samples.clone();
         samples.lock().unwrap().clear();
 
         let stream = match config.sample_format() {
             cpal::SampleFormat::F32 => {
-                self.build_stream::<f32>(&device, &config.into(), samples)?
+                self.build_stream::<f32>(&device, &stream_config, samples)?
             }
             cpal::SampleFormat::I16 => {
-                self.build_stream::<i16>(&device, &config.into(), samples)?
+                self.build_stream::<i16>(&device, &stream_config, samples)?
             }
             cpal::SampleFormat::U16 => {
-                self.build_stream::<u16>(&device, &config.into(), samples)?
+                self.build_stream::<u16>(&device, &stream_config, samples)?
             }
             _ => anyhow::bail!("Unsupported sample format"),
         };
@@ -525,6 +538,7 @@ pub fn load_audio_stdin(_format: &str) -> Result<RecordingOutput> {
 }
 
 /// Classify MP3 data into Single or Chunked based on size
+#[cfg(feature = "ffmpeg")]
 fn classify_recording_output(mp3_data: Vec<u8>) -> Result<RecordingOutput> {
     if mp3_data.len() <= CHUNK_THRESHOLD_BYTES {
         Ok(RecordingOutput::Single(mp3_data))

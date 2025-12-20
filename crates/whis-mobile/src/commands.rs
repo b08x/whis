@@ -1,7 +1,9 @@
 use crate::state::{AppState, RecordingState};
 use tauri::State;
 use tauri_plugin_clipboard_manager::ClipboardExt;
-use whis_core::{AudioRecorder, RecordingOutput, Settings};
+use tauri_plugin_store::StoreExt;
+use whis_core::config::TranscriptionProvider;
+use whis_core::{AudioRecorder, RecordingOutput};
 
 #[derive(serde::Serialize)]
 pub struct StatusResponse {
@@ -10,28 +12,33 @@ pub struct StatusResponse {
 }
 
 #[tauri::command]
-pub fn get_status(state: State<'_, AppState>) -> StatusResponse {
+pub fn get_status(app: tauri::AppHandle, state: State<'_, AppState>) -> StatusResponse {
     let recording_state = *state.recording_state.lock().unwrap();
-    let settings = state.settings.lock().unwrap();
-    let config_valid = settings.get_api_key().is_some();
+
+    // Check if API key is configured via store
+    let config_valid = app
+        .store("settings.json")
+        .ok()
+        .and_then(|store| {
+            let provider = store
+                .get("provider")
+                .and_then(|v| v.as_str().map(String::from))
+                .unwrap_or_else(|| "openai".to_string());
+
+            let key = match provider.as_str() {
+                "openai" => store.get("openai_api_key"),
+                "mistral" => store.get("mistral_api_key"),
+                _ => None,
+            };
+
+            key.and_then(|v| v.as_str().map(|s| !s.is_empty()))
+        })
+        .unwrap_or(false);
 
     StatusResponse {
         state: recording_state,
         config_valid,
     }
-}
-
-#[tauri::command]
-pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
-    let settings = state.settings.lock().unwrap();
-    Ok(settings.clone())
-}
-
-#[tauri::command]
-pub fn save_settings(state: State<'_, AppState>, settings: Settings) -> Result<(), String> {
-    let mut current = state.settings.lock().unwrap();
-    *current = settings.clone();
-    settings.save().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -80,14 +87,29 @@ pub async fn stop_recording(
         data
     };
 
-    // Get transcription config
-    let (provider, api_key, language) = {
-        let settings = state.settings.lock().unwrap();
-        let provider = settings.provider.clone();
-        let api_key = settings.get_api_key().ok_or("No API key configured")?;
-        let language = settings.language.clone();
-        (provider, api_key, language)
-    };
+    // Get transcription config from store
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+
+    let provider_str = store
+        .get("provider")
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_else(|| "openai".to_string());
+
+    let provider: TranscriptionProvider = provider_str
+        .parse()
+        .unwrap_or(TranscriptionProvider::OpenAI);
+
+    let api_key = match provider_str.as_str() {
+        "openai" => store.get("openai_api_key"),
+        "mistral" => store.get("mistral_api_key"),
+        _ => None,
+    }
+    .and_then(|v| v.as_str().map(String::from))
+    .ok_or("No API key configured")?;
+
+    let language: Option<String> = store
+        .get("language")
+        .and_then(|v| v.as_str().map(String::from));
 
     // Finalize recording (convert to MP3)
     let output = tokio::task::spawn_blocking(move || recording_data.finalize())
@@ -122,4 +144,87 @@ pub async fn stop_recording(
     }
 
     Ok(text)
+}
+
+// ========== Preset Commands ==========
+
+/// Preset info for the UI
+#[derive(serde::Serialize)]
+pub struct PresetInfo {
+    pub name: String,
+    pub description: String,
+    pub is_builtin: bool,
+    pub is_active: bool,
+}
+
+/// Full preset details for viewing
+#[derive(serde::Serialize)]
+pub struct PresetDetails {
+    pub name: String,
+    pub description: String,
+    pub prompt: String,
+    pub is_builtin: bool,
+}
+
+/// List all available presets (built-in + user)
+#[tauri::command]
+pub fn list_presets(app: tauri::AppHandle) -> Vec<PresetInfo> {
+    use whis_core::preset::{Preset, PresetSource};
+
+    // Get active preset from store
+    let active_preset = app.store("settings.json").ok().and_then(|store| {
+        store
+            .get("active_preset")
+            .and_then(|v| v.as_str().map(String::from))
+    });
+
+    Preset::list_all()
+        .into_iter()
+        .map(|(p, source)| PresetInfo {
+            is_active: active_preset.as_ref().is_some_and(|a| a == &p.name),
+            name: p.name,
+            description: p.description,
+            is_builtin: source == PresetSource::BuiltIn,
+        })
+        .collect()
+}
+
+/// Get full details of a preset
+#[tauri::command]
+pub fn get_preset_details(name: String) -> Result<PresetDetails, String> {
+    use whis_core::preset::{Preset, PresetSource};
+
+    let (preset, source) = Preset::load(&name)?;
+
+    Ok(PresetDetails {
+        name: preset.name,
+        description: preset.description,
+        prompt: preset.prompt,
+        is_builtin: source == PresetSource::BuiltIn,
+    })
+}
+
+/// Set the active preset
+#[tauri::command]
+pub fn set_active_preset(app: tauri::AppHandle, name: Option<String>) -> Result<(), String> {
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+
+    if let Some(preset_name) = name {
+        store.set("active_preset", serde_json::json!(preset_name));
+    } else {
+        store.delete("active_preset");
+    }
+
+    store.save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Get the active preset name
+#[tauri::command]
+pub fn get_active_preset(app: tauri::AppHandle) -> Option<String> {
+    app.store("settings.json").ok().and_then(|store| {
+        store
+            .get("active_preset")
+            .and_then(|v| v.as_str().map(String::from))
+    })
 }

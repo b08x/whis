@@ -2,6 +2,7 @@
 //!
 //! whisper.cpp requires 16kHz mono f32 PCM audio.
 
+#[cfg(feature = "local-whisper")]
 use anyhow::{Context, Result};
 
 /// Target sample rate for whisper.cpp

@@ -5,7 +5,9 @@
 use anyhow::{Context, Result, anyhow};
 use serde::Deserialize;
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use std::time::Instant;
 
 /// Default Ollama server URL
 pub const DEFAULT_OLLAMA_URL: &str = "http://localhost:11434";
@@ -133,20 +135,23 @@ pub fn ensure_ollama_running(url: &str) -> Result<bool> {
     }
 
     // Wait for Ollama to become ready
-    let start = Instant::now();
-    while start.elapsed() < STARTUP_TIMEOUT {
-        if is_ollama_running(url).unwrap_or(false) {
-            eprintln!("Ollama server started.");
-            return Ok(true);
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        let start = Instant::now();
+        while start.elapsed() < STARTUP_TIMEOUT {
+            if is_ollama_running(url).unwrap_or(false) {
+                eprintln!("Ollama server started.");
+                return Ok(true);
+            }
+            std::thread::sleep(POLL_INTERVAL);
         }
-        std::thread::sleep(POLL_INTERVAL);
-    }
 
-    Err(anyhow!(
-        "Ollama server did not start within {} seconds.\n\
-         Try starting it manually: ollama serve",
-        STARTUP_TIMEOUT.as_secs()
-    ))
+        Err(anyhow!(
+            "Ollama server did not start within {} seconds.\n\
+             Try starting it manually: ollama serve",
+            STARTUP_TIMEOUT.as_secs()
+        ))
+    }
 }
 
 /// Check if a specific model is available in Ollama

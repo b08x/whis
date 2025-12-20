@@ -56,12 +56,12 @@ impl Preset {
         vec![
             Preset {
                 name: "ai-prompt".to_string(),
-                description: "Clean transcript for AI assistant prompts".to_string(),
-                prompt: "Clean up this voice transcript for use as an AI assistant prompt. \
-                    Fix grammar and punctuation. Remove filler words. \
-                    Keep it close to plain text, but use minimal markdown when it improves clarity: \
-                    lists (ordered/unordered) for multiple items, bold for emphasis, headings only when absolutely necessary. \
-                    Preserve the speaker's intent and technical terminology. \
+                description: "Clean voice transcript for AI assistant prompts".to_string(),
+                prompt: "Clean up this voice transcript for use as an AI prompt. \
+                    Remove filler words (um, uh, like, you know) and false starts. \
+                    Fix grammar and punctuation. \
+                    If the speaker corrected themselves, keep only the correction. \
+                    Preserve the speaker's wording. Only restructure if the original is genuinely unclear. \
                     Output only the cleaned text."
                     .to_string(),
                 post_processor: None,
