@@ -38,7 +38,9 @@ pub struct Hotkey {
 }
 
 impl Hotkey {
-    /// Parse a hotkey string like "ctrl+shift+r" into a Hotkey
+    /// Parse a hotkey string like "ctrl+alt+w" or "cmd+option+w" into a Hotkey
+    ///
+    /// Supported modifier aliases: ctrl/control, shift, alt/option, super/meta/win/cmd
     pub fn parse(s: &str) -> Result<Self> {
         let lower = s.to_lowercase();
         let parts: Vec<&str> = lower.split('+').map(|p| p.trim()).collect();
@@ -57,7 +59,7 @@ impl Hotkey {
             match part {
                 "ctrl" | "control" => ctrl = true,
                 "shift" => shift = true,
-                "alt" => alt = true,
+                "alt" | "option" => alt = true,
                 "super" | "meta" | "win" | "cmd" => super_key = true,
                 key_str => {
                     main_key = Some(parse_key(key_str)?);

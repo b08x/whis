@@ -45,8 +45,8 @@ pub fn setup(hotkey_str: &str) -> Result<(Receiver<()>, HotkeyGuard)> {
 
 /// Convert our hotkey format to global-hotkey format
 ///
-/// Input: "ctrl+shift+r" (our format)
-/// Output: "Ctrl+Shift+KeyR" (global-hotkey format)
+/// Input: "ctrl+alt+w" (our format)
+/// Output: "Ctrl+Alt+KeyW" (global-hotkey format)
 fn convert_to_global_hotkey_format(s: &str) -> Result<String> {
     let parts: Vec<&str> = s.split('+').map(|p| p.trim()).collect();
 
@@ -63,7 +63,7 @@ fn convert_to_global_hotkey_format(s: &str) -> Result<String> {
             // Modifiers
             "ctrl" | "control" => "Ctrl".to_string(),
             "shift" => "Shift".to_string(),
-            "alt" => "Alt".to_string(),
+            "alt" | "option" => "Alt".to_string(),
             "super" | "meta" | "win" | "cmd" => "Super".to_string(),
 
             // Single letters -> KeyX format
@@ -209,8 +209,8 @@ mod tests {
     #[test]
     fn test_hotkey_format_conversion() {
         assert_eq!(
-            convert_to_global_hotkey_format("ctrl+shift+r").unwrap(),
-            "Ctrl+Shift+KeyR"
+            convert_to_global_hotkey_format("ctrl+alt+w").unwrap(),
+            "Ctrl+Alt+KeyW"
         );
         assert_eq!(
             convert_to_global_hotkey_format("alt+5").unwrap(),
