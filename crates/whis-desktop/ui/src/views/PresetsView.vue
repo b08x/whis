@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { settingsStore } from '../stores/settings'
-import { AppSelect } from '../components'
+import AppSelect from '../components/AppSelect.vue'
 import type { PresetInfo, PresetDetails, SelectOption } from '../types'
 
 // List state

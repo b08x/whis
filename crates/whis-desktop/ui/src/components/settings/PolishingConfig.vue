@@ -3,7 +3,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { invoke } from '@tauri-apps/api/core'
 import { settingsStore } from '../../stores/settings'
-import { AppSelect, OllamaConfig } from '..'
+import AppSelect from '../AppSelect.vue'
+import OllamaConfig from './OllamaConfig.vue'
 import type { Polisher, SelectOption } from '../../types'
 
 const router = useRouter()

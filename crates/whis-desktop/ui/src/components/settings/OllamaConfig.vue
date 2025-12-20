@@ -3,7 +3,7 @@ import { ref, computed, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { settingsStore } from '../../stores/settings'
-import { AppSelect } from '..'
+import AppSelect from '../AppSelect.vue'
 import type { SelectOption } from '../../types'
 
 const ollamaUrl = computed(() => settingsStore.state.ollama_url)

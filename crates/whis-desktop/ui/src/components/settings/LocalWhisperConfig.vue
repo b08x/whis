@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useWhisperModel } from '../../composables'
+import { useWhisperModel } from '../../composables/useWhisperModel'
 import { settingsStore } from '../../stores/settings'
-import { AppSelect } from '..'
+import AppSelect from '../AppSelect.vue'
 import type { SelectOption } from '../../types'
 
 defineProps<{

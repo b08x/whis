@@ -2,14 +2,12 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { settingsStore } from '../stores/settings'
 import type { Provider, Polisher, SelectOption } from '../types'
-import {
-  ModeCards,
-  CloudProviderConfig,
-  LocalWhisperConfig,
-  PolishingConfig,
-  AppSelect,
-  type TranscriptionMode,
-} from '../components'
+import ModeCards from '../components/settings/ModeCards.vue'
+import CloudProviderConfig from '../components/settings/CloudProviderConfig.vue'
+import LocalWhisperConfig from '../components/settings/LocalWhisperConfig.vue'
+import PolishingConfig from '../components/settings/PolishingConfig.vue'
+import AppSelect from '../components/AppSelect.vue'
+import type { TranscriptionMode } from '../components/settings/ModeCards.vue'
 import { invoke } from '@tauri-apps/api/core'
 
 const helpOpen = ref(false)
