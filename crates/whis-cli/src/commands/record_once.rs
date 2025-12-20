@@ -1,5 +1,5 @@
 use anyhow::{Result, anyhow};
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 use whis_core::{
@@ -122,13 +122,19 @@ pub fn run(
             }
             std::thread::sleep(dur);
         } else {
-            // Interactive mode: wait for Enter to stop
+            // Interactive mode: wait for Enter or hotkey to stop
+            let settings = Settings::load();
+            let hotkey = &settings.shortcut;
+
             if !quiet {
-                println!("Press Enter to stop recording");
-                print!("Recording...");
+                if std::io::stdin().is_terminal() {
+                    println!("Recording... Press Enter or {} to stop", hotkey);
+                } else {
+                    println!("Recording... Press {} to stop", hotkey);
+                }
                 io::stdout().flush()?;
             }
-            app::wait_for_enter()?;
+            app::wait_for_stop(hotkey)?;
         }
 
         // In verbose mode (non-quiet only), print newline so verbose output appears cleanly

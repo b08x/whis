@@ -85,36 +85,41 @@ pub fn load_transcription_config() -> Result<TranscriptionConfig> {
     })
 }
 
-pub fn wait_for_enter() -> Result<()> {
+/// Wait for user to stop recording via Enter key or global hotkey.
+/// In TTY mode: accepts either Enter or hotkey.
+/// In non-TTY mode (e.g., AI assistant shell): only hotkey works.
+pub fn wait_for_stop(hotkey_str: &str) -> Result<()> {
+    use crate::hotkey;
+
     std::io::stdout().flush()?;
 
+    // Set up global hotkey listener
+    let (hotkey_rx, _guard) = hotkey::setup(hotkey_str)?;
+
     if std::io::stdin().is_terminal() {
-        // Normal case: use crossterm for clean raw mode input (no echo)
+        // TTY mode: accept Enter OR hotkey
         enable_raw_mode()?;
 
         loop {
-            if let Event::Key(key_event) = event::read()?
-                && key_event.code == KeyCode::Enter
-            {
+            // Check for hotkey (non-blocking)
+            if hotkey_rx.try_recv().is_ok() {
                 break;
+            }
+
+            // Check for Enter key with timeout (50ms polling)
+            if event::poll(Duration::from_millis(50))? {
+                if let Event::Key(key_event) = event::read()?
+                    && key_event.code == KeyCode::Enter
+                {
+                    break;
+                }
             }
         }
 
         disable_raw_mode()?;
     } else {
-        // Subshell case (e.g., running inside AI assistant shell mode)
-        // stdin isn't a terminal, so read from the controlling terminal directly
-        use std::io::{BufRead, BufReader};
-
-        #[cfg(unix)]
-        let tty = std::fs::File::open("/dev/tty")?;
-
-        #[cfg(windows)]
-        let tty = std::fs::File::open("CONIN$")?;
-
-        let mut reader = BufReader::new(tty);
-        let mut line = String::new();
-        reader.read_line(&mut line)?;
+        // Non-TTY mode: only hotkey works (blocks until pressed)
+        hotkey_rx.recv()?;
     }
 
     Ok(())
