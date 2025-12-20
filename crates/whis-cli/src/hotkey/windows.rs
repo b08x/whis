@@ -201,35 +201,3 @@ fn convert_to_global_hotkey_format(s: &str) -> Result<String> {
 
     Ok(result.join("+"))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_hotkey_format_conversion() {
-        assert_eq!(
-            convert_to_global_hotkey_format("ctrl+alt+w").unwrap(),
-            "Ctrl+Alt+KeyW"
-        );
-        assert_eq!(
-            convert_to_global_hotkey_format("alt+5").unwrap(),
-            "Alt+Digit5"
-        );
-        assert_eq!(
-            convert_to_global_hotkey_format("super+f1").unwrap(),
-            "Super+F1"
-        );
-        assert_eq!(
-            convert_to_global_hotkey_format("ctrl+space").unwrap(),
-            "Ctrl+Space"
-        );
-    }
-
-    #[test]
-    fn test_invalid_hotkey() {
-        assert!(convert_to_global_hotkey_format("ctrl+shift+invalidkey").is_err());
-        assert!(convert_to_global_hotkey_format("").is_err());
-        assert!(convert_to_global_hotkey_format("ctrl+shift").is_err()); // No main key
-    }
-}

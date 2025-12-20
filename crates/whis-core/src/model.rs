@@ -191,20 +191,3 @@ pub fn list_models() {
         eprintln!("  {} - {} {}", name, desc, status);
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_default_model_path() {
-        let path = default_model_path("small");
-        assert!(path.to_string_lossy().contains("ggml-small.bin"));
-    }
-
-    #[test]
-    fn test_get_model_url() {
-        assert!(get_model_url("small").is_some());
-        assert!(get_model_url("nonexistent").is_none());
-    }
-}

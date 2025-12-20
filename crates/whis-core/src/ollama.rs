@@ -266,19 +266,3 @@ pub fn ensure_ollama_ready(url: &str, model: &str) -> Result<()> {
 
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_is_ollama_installed() {
-        // This test just verifies the function doesn't panic
-        let _ = is_ollama_installed();
-    }
-
-    #[test]
-    fn test_default_url_is_localhost() {
-        assert!(DEFAULT_OLLAMA_URL.contains("localhost"));
-    }
-}

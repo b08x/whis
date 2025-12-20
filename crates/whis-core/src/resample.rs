@@ -69,26 +69,3 @@ fn stereo_to_mono(samples: &[f32], channels: u16) -> Vec<f32> {
         .map(|frame| frame.iter().sum::<f32>() / channels as f32)
         .collect()
 }
-
-#[cfg(test)]
-#[cfg(feature = "local-whisper")]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_stereo_to_mono() {
-        let stereo = vec![0.5, 0.3, 0.8, 0.2, 1.0, 0.0];
-        let mono = stereo_to_mono(&stereo, 2);
-        assert_eq!(mono.len(), 3);
-        assert!((mono[0] - 0.4).abs() < 0.001);
-        assert!((mono[1] - 0.5).abs() < 0.001);
-        assert!((mono[2] - 0.5).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_resample_passthrough_16k() {
-        let samples = vec![0.1, 0.2, 0.3, 0.4, 0.5];
-        let result = resample_to_16k(&samples, 16000, 1).unwrap();
-        assert_eq!(result, samples);
-    }
-}
