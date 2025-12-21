@@ -36,13 +36,6 @@ onMounted(() => {
 <template>
   <div class="presets-view">
     <main class="presets-content">
-      <h1 class="page-title">
-        Presets
-      </h1>
-      <p class="page-description">
-        Select a preset to customize how your transcriptions are processed.
-      </p>
-
       <!-- Loading State -->
       <div v-if="loading" class="loading">
         <div class="spinner" />
@@ -138,18 +131,6 @@ onMounted(() => {
   flex-direction: column;
   gap: 16px;
   overflow-y: auto;
-}
-
-.page-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-strong);
-}
-
-.page-description {
-  font-size: 14px;
-  color: var(--text-weak);
-  line-height: 1.5;
 }
 
 /* Loading */

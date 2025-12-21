@@ -10,17 +10,16 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             app.manage(AppState {
                 recording_state: Mutex::new(state::RecordingState::Idle),
-                recorder: Mutex::new(None),
             });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_status,
-            commands::start_recording,
-            commands::stop_recording,
+            commands::transcribe_audio,
             commands::validate_api_key,
             commands::list_presets,
             commands::get_preset_details,

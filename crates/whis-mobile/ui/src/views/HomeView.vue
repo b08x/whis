@@ -8,74 +8,156 @@ import { settingsStore } from '../stores/settings'
 const router = useRouter()
 
 // State
-const status = ref<StatusResponse>({ state: 'Idle', config_valid: false })
+const configValid = ref(false)
+const isRecording = ref(false)
+const isTranscribing = ref(false)
 const error = ref<string | null>(null)
 const lastTranscription = ref<string | null>(null)
 const showCopied = ref(false)
 
-let pollInterval: number | null = null
+// MediaRecorder
+let mediaRecorder: MediaRecorder | null = null
+let audioChunks: Blob[] = []
 
 const buttonText = computed(() => {
-  switch (status.value.state) {
-    case 'Idle': return 'Tap to Record'
-    case 'Recording': return 'Tap to Stop'
-    case 'Transcribing': return 'Transcribing...'
-    default: return 'Tap to Record'
-  }
+  if (isTranscribing.value)
+    return 'Transcribing...'
+  if (isRecording.value)
+    return 'Stop Recording'
+  return 'Start Recording'
 })
 
 const canRecord = computed(() => {
-  return status.value.config_valid && status.value.state !== 'Transcribing'
+  return configValid.value && !isTranscribing.value
 })
 
-async function fetchStatus() {
+async function checkConfig() {
   try {
-    status.value = await invoke<StatusResponse>('get_status')
-    error.value = null
+    const status = await invoke<StatusResponse>('get_status')
+    configValid.value = status.config_valid
   }
   catch (e) {
     console.error('Failed to get status:', e)
   }
 }
 
+async function startRecording() {
+  try {
+    error.value = null
+    audioChunks = []
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+
+    // Try to use webm/opus, fall back to whatever is available
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')
+          ? 'audio/ogg;codecs=opus'
+          : ''
+
+    mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        audioChunks.push(event.data)
+      }
+    }
+
+    mediaRecorder.onstop = async () => {
+      // Stop all tracks to release the microphone
+      stream.getTracks().forEach(track => track.stop())
+
+      if (audioChunks.length === 0) {
+        error.value = 'No audio recorded'
+        isRecording.value = false
+        return
+      }
+
+      const audioBlob = new Blob(audioChunks, { type: mediaRecorder?.mimeType || 'audio/webm' })
+      await transcribeAudio(audioBlob)
+    }
+
+    mediaRecorder.onerror = (event) => {
+      console.error('MediaRecorder error:', event)
+      error.value = 'Recording error occurred'
+      isRecording.value = false
+      stream.getTracks().forEach(track => track.stop())
+    }
+
+    mediaRecorder.start()
+    isRecording.value = true
+  }
+  catch (e) {
+    console.error('Failed to start recording:', e)
+    if (e instanceof DOMException && e.name === 'NotAllowedError') {
+      error.value = 'Microphone permission denied. Please allow microphone access in your browser/app settings.'
+    }
+    else {
+      error.value = String(e)
+    }
+  }
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop()
+  }
+  isRecording.value = false
+}
+
+async function transcribeAudio(audioBlob: Blob) {
+  isTranscribing.value = true
+  error.value = null
+
+  try {
+    // Convert blob to Uint8Array
+    const arrayBuffer = await audioBlob.arrayBuffer()
+    const audioData = Array.from(new Uint8Array(arrayBuffer))
+
+    const text = await invoke<string>('transcribe_audio', {
+      audioData,
+      mimeType: audioBlob.type || 'audio/webm',
+    })
+
+    lastTranscription.value = text
+    showCopied.value = true
+    setTimeout(() => showCopied.value = false, 2000)
+  }
+  catch (e) {
+    error.value = String(e)
+  }
+  finally {
+    isTranscribing.value = false
+  }
+}
+
 async function toggleRecording() {
   if (!canRecord.value) {
-    if (!status.value.config_valid) {
+    if (!configValid.value) {
       router.push('/settings')
     }
     return
   }
 
-  try {
-    error.value = null
-
-    if (status.value.state === 'Idle') {
-      await invoke('start_recording')
-    }
-    else if (status.value.state === 'Recording') {
-      const text = await invoke<string>('stop_recording')
-      lastTranscription.value = text
-      showCopied.value = true
-      setTimeout(() => showCopied.value = false, 2000)
-    }
-
-    await fetchStatus()
+  if (isRecording.value) {
+    stopRecording()
   }
-  catch (e) {
-    error.value = String(e)
-    await fetchStatus()
+  else {
+    await startRecording()
   }
 }
 
 onMounted(async () => {
   await settingsStore.initialize()
-  await fetchStatus()
-  pollInterval = window.setInterval(fetchStatus, 500)
+  await checkConfig()
 })
 
 onUnmounted(() => {
-  if (pollInterval) {
-    clearInterval(pollInterval)
+  // Clean up recording if component unmounts
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop()
   }
 })
 </script>
@@ -85,30 +167,14 @@ onUnmounted(() => {
     <main class="content">
       <!-- Record Button -->
       <button
-        class="record-btn"
-        :class="{
-          recording: status.state === 'Recording',
-          transcribing: status.state === 'Transcribing',
-          disabled: !canRecord && status.config_valid,
-        }"
+        class="btn btn-secondary"
+        :class="{ recording: isRecording, transcribing: isTranscribing }"
+        :disabled="!canRecord"
         @click="toggleRecording"
       >
-        <div class="record-circle">
-          <div v-if="status.state === 'Recording'" class="pulse-ring" />
-          <svg v-if="status.state === 'Idle'" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
-            <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
-          </svg>
-          <svg v-else-if="status.state === 'Recording'" viewBox="0 0 24 24" fill="currentColor">
-            <rect x="6" y="6" width="12" height="12" rx="2" />
-          </svg>
-          <div v-else class="spinner" />
-        </div>
+        <span class="record-indicator" />
+        <span>{{ buttonText }}</span>
       </button>
-
-      <p class="status-text">
-        {{ buttonText }}
-      </p>
 
       <!-- Copied Toast -->
       <div v-if="showCopied" class="toast">
@@ -121,7 +187,7 @@ onUnmounted(() => {
       </p>
 
       <!-- Setup Hint -->
-      <p v-if="!status.config_valid" class="setup-hint" @click="router.push('/settings')">
+      <p v-if="!configValid" class="setup-hint" @click="router.push('/settings')">
         Tap to configure API key
       </p>
 
@@ -147,85 +213,15 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   padding: 20px;
-  padding-bottom: max(20px, env(safe-area-inset-bottom));
+  padding-bottom: max(80px, calc(env(safe-area-inset-bottom) + 60px));
   gap: 24px;
 }
 
-/* Record Button */
-.record-btn {
-  width: 160px;
-  height: 160px;
-  border-radius: 50%;
-  border: none;
-  background: var(--bg-weak);
-  cursor: pointer;
-  position: relative;
-  transition: transform 0.2s, background 0.2s;
-}
-
-.record-btn:active {
-  transform: scale(0.95);
-}
-
-.record-btn.recording {
-  background: var(--recording);
-}
-
-.record-btn.transcribing {
-  background: var(--bg-weak);
-  cursor: wait;
-}
-
-.record-btn.disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.record-circle {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-}
-
-.record-circle svg {
-  width: 64px;
-  height: 64px;
-  color: var(--text);
-}
-
-.recording .record-circle svg {
-  color: white;
-}
-
-/* Pulse animation */
-.pulse-ring {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  border: 3px solid white;
-  animation: pulse 1.5s ease-out infinite;
-}
-
-/* Spinner */
-.spinner {
-  width: 48px;
-  height: 48px;
-  border: 4px solid var(--bg);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-/* Status */
-.status-text {
-  font-size: 18px;
-  color: var(--text-weak);
+/* Record Button - aligned with desktop */
+.btn.btn-secondary {
+  gap: 10px;
 }
 
 /* Toast */

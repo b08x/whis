@@ -11,7 +11,13 @@ const navItems = [
   { path: '/', name: 'home', label: 'home' },
   { path: '/presets', name: 'presets', label: 'presets' },
   { path: '/settings', name: 'settings', label: 'settings' },
+  { path: '/about', name: 'about', label: 'about' },
 ]
+
+const currentPageLabel = computed(() => {
+  const item = navItems.find(i => i.name === route.name)
+  return item?.label ?? 'whis'
+})
 
 function toggleSidebar() {
   sidebarOpen.value = !sidebarOpen.value
@@ -43,7 +49,7 @@ onMounted(() => {
       >
         <span>{{ sidebarOpen ? '[x]' : '[=]' }}</span>
       </button>
-      <span class="mobile-brand">whis</span>
+      <span class="mobile-brand">{{ currentPageLabel }}</span>
     </header>
 
     <!-- Backdrop -->
@@ -233,6 +239,8 @@ onMounted(() => {
 /* Content */
 .content {
   flex: 1;
+  display: flex;
+  flex-direction: column;
   margin-top: calc(48px + env(safe-area-inset-top, 0px));
   min-height: calc(100vh - 48px - env(safe-area-inset-top, 0px));
   overflow-y: auto;

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { SelectOption } from '../types'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { computed } from 'vue'
 import AppInput from '../components/AppInput.vue'
 import AppSelect from '../components/AppSelect.vue'
@@ -52,9 +53,6 @@ const mistralApiKey = computed({
 <template>
   <div class="settings-view">
     <main class="settings-content">
-      <h1 class="page-title">
-        Settings
-      </h1>
       <div class="field">
         <label>provider</label>
         <AppSelect
@@ -72,7 +70,7 @@ const mistralApiKey = computed({
           placeholder="sk-..."
         />
         <span class="hint">
-          Get your key at <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com</a>
+          Get your key at <span class="link" @click="openUrl('https://platform.openai.com/api-keys')">platform.openai.com</span>
         </span>
       </div>
 
@@ -84,7 +82,7 @@ const mistralApiKey = computed({
           placeholder="Enter API key"
         />
         <span class="hint">
-          Get your key at <a href="https://console.mistral.ai/api-keys" target="_blank">console.mistral.ai</a>
+          Get your key at <span class="link" @click="openUrl('https://console.mistral.ai/api-keys')">console.mistral.ai</span>
         </span>
       </div>
 
@@ -116,14 +114,6 @@ const mistralApiKey = computed({
   min-height: 100%;
 }
 
-/* Page Title */
-.page-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-strong);
-  margin-bottom: 8px;
-}
-
 /* Content */
 .settings-content {
   flex: 1;
@@ -146,6 +136,17 @@ const mistralApiKey = computed({
 }
 
 .notice-marker {
+  color: var(--accent);
+}
+
+.link {
+  color: var(--text-strong);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.link:active {
   color: var(--accent);
 }
 </style>

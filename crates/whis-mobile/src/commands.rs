@@ -3,7 +3,6 @@ use tauri::State;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_store::StoreExt;
 use whis_core::config::TranscriptionProvider;
-use whis_core::{AudioRecorder, RecordingOutput};
 
 #[derive(serde::Serialize)]
 pub struct StatusResponse {
@@ -50,42 +49,22 @@ pub fn validate_api_key(key: String, provider: String) -> bool {
     }
 }
 
+/// Transcribe audio data received from the WebView
+///
+/// The frontend records audio using MediaRecorder (webm/opus format)
+/// and sends the raw bytes here for transcription.
 #[tauri::command]
-pub fn start_recording(state: State<'_, AppState>) -> Result<(), String> {
-    let mut recording_state = state.recording_state.lock().unwrap();
-    if *recording_state != RecordingState::Idle {
-        return Err("Already recording or transcribing".to_string());
-    }
-
-    let mut recorder = AudioRecorder::new().map_err(|e| e.to_string())?;
-    recorder.start_recording().map_err(|e| e.to_string())?;
-
-    *state.recorder.lock().unwrap() = Some(recorder);
-    *recording_state = RecordingState::Recording;
-
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn stop_recording(
+pub async fn transcribe_audio(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
+    audio_data: Vec<u8>,
+    mime_type: String,
 ) -> Result<String, String> {
-    // Stop recording and get data
-    let recording_data = {
+    // Set state to transcribing
+    {
         let mut recording_state = state.recording_state.lock().unwrap();
-        if *recording_state != RecordingState::Recording {
-            return Err("Not currently recording".to_string());
-        }
-
-        let mut recorder_guard = state.recorder.lock().unwrap();
-        let recorder = recorder_guard.as_mut().ok_or("No recorder available")?;
-
-        let data = recorder.stop_recording().map_err(|e| e.to_string())?;
-        *recorder_guard = None;
         *recording_state = RecordingState::Transcribing;
-        data
-    };
+    }
 
     // Get transcription config from store
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
@@ -111,26 +90,31 @@ pub async fn stop_recording(
         .get("language")
         .and_then(|v| v.as_str().map(String::from));
 
-    // Finalize recording (convert to MP3)
-    let output = tokio::task::spawn_blocking(move || recording_data.finalize())
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())?;
-
-    // Transcribe (wrap blocking calls in spawn_blocking to avoid tokio panic)
-    let text = match output {
-        RecordingOutput::Single(data) => tokio::task::spawn_blocking(move || {
-            whis_core::transcribe_audio(&provider, &api_key, language.as_deref(), data)
-        })
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())?,
-        RecordingOutput::Chunked(chunks) => {
-            whis_core::parallel_transcribe(&provider, &api_key, language.as_deref(), chunks, None)
-                .await
-                .map_err(|e| e.to_string())?
-        }
+    // Determine filename extension based on mime type
+    let filename = if mime_type.contains("webm") {
+        "audio.webm"
+    } else if mime_type.contains("ogg") {
+        "audio.ogg"
+    } else if mime_type.contains("mp4") || mime_type.contains("m4a") {
+        "audio.m4a"
+    } else {
+        "audio.mp3"
     };
+
+    // Transcribe
+    let text = tokio::task::spawn_blocking(move || {
+        whis_core::transcribe_audio_with_format(
+            &provider,
+            &api_key,
+            language.as_deref(),
+            audio_data,
+            Some(&mime_type),
+            Some(filename),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
 
     // Copy to clipboard using Tauri plugin
     app.clipboard()

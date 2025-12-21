@@ -118,6 +118,45 @@ body {
   background: var(--bg-weak);
 }
 
+/* Recording button states */
+.btn.btn-secondary.recording {
+  background: var(--recording);
+  border-color: var(--recording);
+  color: white;
+}
+
+.btn.btn-secondary.transcribing {
+  background: var(--bg-weak);
+  border-color: var(--border);
+  color: var(--text-weak);
+  cursor: wait;
+}
+
+/* Record indicator dot */
+.record-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.btn.btn-secondary.recording .record-indicator {
+  opacity: 1;
+  animation: indicator-pulse 1s ease-in-out infinite;
+}
+
+.btn.btn-secondary.transcribing .record-indicator {
+  background: var(--accent);
+  opacity: 1;
+}
+
+@keyframes indicator-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 /* Button - link style */
 .btn-link {
   background: none;
