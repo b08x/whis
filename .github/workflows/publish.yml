@@ -1,0 +1,60 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish-crates:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libx11-dev libxtst-dev
+
+      - name: Publish crates
+        run: just publish-crates
+
+  publish-aur:
+    name: Publish to AUR
+    needs: [publish-crates]
+    runs-on: ubuntu-latest
+    env:
+      GIT_SSH_COMMAND: ssh -i ~/.ssh/aur
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          cat >> ~/.ssh/known_hosts << 'EOF'
+          aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN
+          EOF
+
+      - name: Configure git
+        run: |
+          git config --global user.email "frank_dierolf@web.de"
+          git config --global user.name "Frank Dierolf - Github Actions"
+
+      - name: Publish to AUR
+        run: just publish-aur ${{ github.event.release.tag_name }}
