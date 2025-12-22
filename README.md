@@ -106,6 +106,10 @@ just install-cli    # Build and install CLI
 
 See [CONTRIBUTING.md](https://github.com/frankdierolf/whis/blob/main/CONTRIBUTING.md) for full setup instructions.
 
+## Architecture
+
+![Whis Architecture](https://raw.githubusercontent.com/frankdierolf/whis/main/website/public/architecture.jpg)
+
 ## License
 
 MIT
