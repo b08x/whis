@@ -128,8 +128,8 @@ jobs:
         run: just build-release-cli-macos ${{ matrix.target }}
         env:
           # Disable native CPU detection and i8mm to avoid build issues on GitHub runners
-          CMAKE_TOOLCHAIN_FILE_aarch64-apple-darwin: ${{ matrix.target == 'aarch64-apple-darwin' && github.workspace + '/.github/cmake-apple-silicon.cmake' || '' }}
-          CMAKE_TOOLCHAIN_FILE_aarch64_apple_darwin: ${{ matrix.target == 'aarch64-apple-darwin' && github.workspace + '/.github/cmake-apple-silicon.cmake' || '' }}
+          CMAKE_TOOLCHAIN_FILE_aarch64-apple-darwin: ${{ matrix.target == 'aarch64-apple-darwin' && format('{0}/.github/cmake-apple-silicon.cmake', github.workspace) || '' }}
+          CMAKE_TOOLCHAIN_FILE_aarch64_apple_darwin: ${{ matrix.target == 'aarch64-apple-darwin' && format('{0}/.github/cmake-apple-silicon.cmake', github.workspace) || '' }}
 
       - name: Package
         run: |
