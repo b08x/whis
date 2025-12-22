@@ -25,7 +25,7 @@ rdev.workspace = true
 global-hotkey.workspace = true
 crossbeam-channel.workspace = true
 interprocess.workspace = true
-reqwest = { version = "0.12", features = ["blocking"] }
+reqwest.workspace = true
 dirs = "5"
 crossterm = "0.29"
 
