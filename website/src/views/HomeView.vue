@@ -67,9 +67,9 @@ function formatNumber(n: number): string {
     </div>
 
     <div class="cta-group">
-      <RouterLink to="/cli" class="cta-primary">
-        <span class="cta-icon">&gt;</span>
-        Get Started
+      <RouterLink to="/downloads" class="cta-primary">
+        <span class="cta-icon">↓</span>
+        Download
       </RouterLink>
       <a
         href="https://github.com/frankdierolf/whis"
@@ -188,8 +188,7 @@ function formatNumber(n: number): string {
 }
 
 .cta-icon {
-  color: var(--accent);
-  font-weight: 700;
+  font-size: 1.1rem;
 }
 
 .cta-secondary {

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import CommandCopy from '@/components/CommandCopy.vue'
+import Lightbox from '@/components/Lightbox.vue'
 import TabPanel from '@/components/TabPanel.vue'
-import TheLightbox from '@/components/TheLightbox.vue'
+import ViewHeader from '@/components/ViewHeader.vue'
 
 const installTab = ref('cargo')
 const lightboxOpen = ref(false)
@@ -14,11 +15,7 @@ const demoImage = [
 
 <template>
   <div class="cli-content">
-    <!-- Header -->
-    <header class="view-header">
-      <h1>CLI</h1>
-      <p>Voice-to-text for terminal workflows</p>
-    </header>
+    <ViewHeader title="CLI" subtitle="Voice-to-text for terminal workflows" />
 
     <!-- Install -->
     <section id="install" class="install">
@@ -26,8 +23,8 @@ const demoImage = [
         v-model:selected="installTab"
         :tabs="[
           { value: 'cargo', label: 'cargo' },
+          { value: 'aur', label: 'aur' },
           { value: 'source', label: 'source' },
-          { value: 'download', label: 'download' },
         ]"
       >
         <div v-if="installTab === 'cargo'" class="panel">
@@ -38,7 +35,15 @@ const demoImage = [
             ]"
           />
         </div>
-        <div v-else-if="installTab === 'source'" class="panel">
+        <div v-else-if="installTab === 'aur'" class="panel">
+          <CommandCopy
+            :segments="[
+              { text: 'yay -S ' },
+              { text: 'whis', highlight: true },
+            ]"
+          />
+        </div>
+        <div v-else class="panel">
           <CommandCopy
             :segments="[
               { text: 'git clone ' },
@@ -48,19 +53,12 @@ const demoImage = [
             ]"
           />
         </div>
-        <div v-else class="panel">
-          <CommandCopy
-            :segments="[
-              { text: 'tar -xzf ' },
-              { text: 'whis-*.tar.gz', highlight: true },
-              { text: ' && sudo mv whis /usr/local/bin/' },
-            ]"
-          />
-          <p class="install-note">
-            Download your platform's binary from GitHub Releases first.
-          </p>
-        </div>
       </TabPanel>
+      <p class="install-note">
+        <RouterLink to="/downloads">
+          More options →
+        </RouterLink>
+      </p>
     </section>
 
     <!-- Features -->
@@ -88,7 +86,7 @@ const demoImage = [
         </li>
         <li>
           <span class="marker">[*]</span>
-          <div><strong>Presets</strong> ai-prompt, email, notes — or create your own</div>
+          <div><strong>Presets</strong> ai-prompt, email, default — or create your own</div>
         </li>
         <li>
           <span class="marker">[*]</span>
@@ -112,7 +110,7 @@ const demoImage = [
     </section>
 
     <!-- Lightbox -->
-    <TheLightbox v-model:open="lightboxOpen" :images="demoImage" :initial-index="0" />
+    <Lightbox v-model:open="lightboxOpen" :images="demoImage" :initial-index="0" />
 
     <!-- Quick Start -->
     <section class="quickstart">
@@ -138,24 +136,6 @@ const demoImage = [
   padding: 2rem;
 }
 
-.view-header {
-  margin-bottom: 2rem;
-  padding-bottom: 1.5rem;
-  border-bottom: 1px solid var(--border-weak);
-}
-
-.view-header h1 {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--text-strong);
-  margin-bottom: 0.5rem;
-}
-
-.view-header p {
-  font-size: 0.9rem;
-  color: var(--text-weak);
-}
-
 .install {
   padding: 2rem 0;
 }
@@ -165,9 +145,19 @@ const demoImage = [
 }
 
 .install-note {
-  margin-top: 0.5rem;
+  margin-top: 0.75rem;
   font-size: 0.75rem;
   color: var(--text-weak);
+}
+
+.install-note a {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.install-note a:hover {
+  color: var(--accent);
 }
 
 .features {

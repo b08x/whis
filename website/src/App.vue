@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { version } from '../package.json'
 
 const route = useRoute()
 const sidebarOpen = ref(false)
 
 const navItems = [
   { path: '/', name: 'home', label: 'home' },
+  { path: '/downloads', name: 'downloads', label: 'downloads' },
   { path: '/cli', name: 'cli', label: 'cli' },
   { path: '/desktop', name: 'desktop', label: 'desktop' },
   { path: '/mobile', name: 'mobile', label: 'mobile' },
@@ -63,14 +65,9 @@ function closeSidebar() {
       </nav>
 
       <div class="sidebar-footer">
-        <a
-          href="https://github.com/frankdierolf/whis/releases"
-          target="_blank"
-          rel="noopener"
-          class="version-badge"
-        >
-          v0.5.9 · MIT
-        </a>
+        <RouterLink to="/downloads" class="version-badge">
+          v{{ version }} · MIT
+        </RouterLink>
       </div>
     </aside>
 

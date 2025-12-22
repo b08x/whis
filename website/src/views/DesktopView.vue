@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import CommandCopy from '@/components/CommandCopy.vue'
+import type { Platform } from '@/composables/usePlatformDetection'
+import { computed, ref } from 'vue'
 import ImageCarousel from '@/components/ImageCarousel.vue'
-import TabPanel from '@/components/TabPanel.vue'
-import TheLightbox from '@/components/TheLightbox.vue'
+import Lightbox from '@/components/Lightbox.vue'
+import ViewHeader from '@/components/ViewHeader.vue'
+import { useGitHubRelease } from '@/composables/useGitHubRelease'
+import { usePlatformDetection } from '@/composables/usePlatformDetection'
 
-const installTab = ref('appimage')
+const { platform, arch } = usePlatformDetection()
+const { version, versionNum, findAsset } = useGitHubRelease()
+
 const lightboxOpen = ref(false)
 const lightboxIndex = ref(0)
 
@@ -19,6 +23,48 @@ const screenshots = [
   { src: '/screenshot-07-presets.png', alt: 'Preset configurations for AI prompts, email, and notes', caption: 'Presets' },
 ]
 
+const platformLabel = computed(() => {
+  const labels: Record<Platform, string> = {
+    linux: 'Linux',
+    macos: 'macOS',
+    windows: 'Windows',
+    android: 'Android',
+    unknown: 'your system',
+  }
+  return labels[platform.value]
+})
+
+const recommendedDownload = computed(() => {
+  const v = version.value
+  const vn = versionNum.value
+  const base = `https://github.com/frankdierolf/whis/releases/download/${v}`
+
+  switch (platform.value) {
+    case 'linux':
+      return {
+        label: 'AppImage',
+        url: findAsset(/Whis_.*_amd64\.AppImage$/)?.browser_download_url || `${base}/Whis_${vn}_amd64.AppImage`,
+      }
+    case 'macos':
+      return {
+        label: 'DMG',
+        url: arch.value === 'arm64'
+          ? (findAsset(/Whis_.*_aarch64\.dmg$/)?.browser_download_url || `${base}/Whis_${vn}_aarch64.dmg`)
+          : (findAsset(/Whis_.*_x64\.dmg$/)?.browser_download_url || `${base}/Whis_${vn}_x64.dmg`),
+      }
+    case 'windows':
+      return {
+        label: 'exe',
+        url: findAsset(/Whis_.*_x64-setup\.exe$/)?.browser_download_url || `${base}/Whis_${vn}_x64-setup.exe`,
+      }
+    default:
+      return {
+        label: 'AppImage',
+        url: findAsset(/Whis_.*_amd64\.AppImage$/)?.browser_download_url || `${base}/Whis_${vn}_amd64.AppImage`,
+      }
+  }
+})
+
 function openLightbox(index: number) {
   lightboxIndex.value = index
   lightboxOpen.value = true
@@ -27,116 +73,23 @@ function openLightbox(index: number) {
 
 <template>
   <div class="desktop-content">
-    <!-- Header -->
-    <header class="view-header">
-      <h1>Desktop</h1>
-      <p>System tray app for voice-to-text anywhere</p>
-    </header>
+    <ViewHeader title="Desktop" subtitle="System tray app for voice-to-text anywhere" />
 
     <!-- Install -->
-    <section id="install-desktop" class="install">
-      <TabPanel
-        v-model:selected="installTab"
-        :tabs="[
-          { value: 'appimage', label: 'AppImage' },
-          { value: 'flatpak', label: 'Flatpak' },
-          { value: 'deb', label: 'deb' },
-          { value: 'rpm', label: 'rpm' },
-          { value: 'source', label: 'source' },
-          { value: 'macos', label: 'macOS' },
-          { value: 'windows', label: 'Windows' },
-        ]"
-      >
-        <div v-if="installTab === 'flatpak'" class="panel">
-          <CommandCopy
-            :segments="[
-              { text: 'flatpak install flathub ' },
-              { text: 'ink.whis.Whis', highlight: true },
-            ]"
-          />
-          <p class="install-note">
-            Available on Flathub. Includes automatic updates.
-          </p>
-        </div>
-        <div v-else-if="installTab === 'appimage'" class="panel">
-          <CommandCopy
-            :segments="[
-              { text: 'chmod +x ' },
-              { text: 'Whis_*_amd64.AppImage', highlight: true },
-              { text: ' && ./' },
-              { text: 'Whis_*_amd64.AppImage', highlight: true },
-              { text: ' --install' },
-            ]"
-          />
-          <p class="install-note">
-            Download from GitHub Releases. Then launch "Whis" from your app menu.
-          </p>
-        </div>
-        <div v-else-if="installTab === 'deb'" class="panel">
-          <CommandCopy
-            :segments="[
-              { text: 'sudo apt install ' },
-              { text: './Whis_*_amd64.deb', highlight: true },
-            ]"
-          />
-          <p class="install-note">
-            Download from GitHub Releases first.
-          </p>
-        </div>
-        <div v-else-if="installTab === 'rpm'" class="panel">
-          <CommandCopy
-            :segments="[
-              { text: 'sudo dnf install ' },
-              { text: './Whis-*.x86_64.rpm', highlight: true },
-            ]"
-          />
-          <p class="install-note">
-            Download from GitHub Releases first.
-          </p>
-        </div>
-        <div v-else-if="installTab === 'source'" class="panel">
-          <CommandCopy
-            :segments="[
-              { text: 'git clone ' },
-              { text: 'https://github.com/frankdierolf/whis', highlight: true },
-              { text: ' && cd whis && ' },
-              { text: 'just install-desktop', highlight: true },
-            ]"
-          />
-          <p class="install-note">
-            Requires <a href="https://github.com/casey/just" target="_blank" rel="noopener">just</a>.
-            Builds and installs the AppImage to ~/.local/bin.
-          </p>
-        </div>
-        <div v-else-if="installTab === 'macos'" class="panel">
-          <CommandCopy
-            :segments="[
-              { text: 'git clone ' },
-              { text: 'https://github.com/frankdierolf/whis', highlight: true },
-              { text: ' && cd whis && ' },
-              { text: 'just install-desktop', highlight: true },
-            ]"
-          />
-          <p class="install-note">
-            Requires <a href="https://github.com/casey/just" target="_blank" rel="noopener">just</a>.
-            Builds and installs the .app to /Applications/.
-          </p>
-        </div>
-        <div v-else class="panel">
-          <CommandCopy
-            :segments="[
-              { text: 'git clone ' },
-              { text: 'https://github.com/frankdierolf/whis', highlight: true },
-              { text: ' && cd whis && ' },
-              { text: 'just install-desktop', highlight: true },
-            ]"
-          />
-          <p class="install-note">
-            Experimental. Requires <a href="https://github.com/casey/just" target="_blank" rel="noopener">just</a>.
-            Builds and runs the installer.
-          </p>
-        </div>
-      </TabPanel>
+    <section class="install">
+      <h2 class="install-title">
+        Download for {{ platformLabel }}
+      </h2>
+      <a :href="recommendedDownload.url" class="download-button">
+        <span class="download-icon">↓</span>
+        <span class="download-label">{{ recommendedDownload.label }}</span>
+        <span class="download-version">{{ version }}</span>
+      </a>
+      <p class="install-note">
+        <RouterLink to="/downloads">
+          More options →
+        </RouterLink>
+      </p>
     </section>
 
     <!-- Features -->
@@ -183,89 +136,17 @@ function openLightbox(index: number) {
     <!-- Quick Start -->
     <section class="quickstart">
       <h2>Quick Start</h2>
-
-      <!-- AppImage -->
-      <pre v-if="installTab === 'appimage'"><code><span class="comment"># 1. Download and install</span>
-chmod +x <span class="highlight">Whis_*_amd64.AppImage</span>
-./Whis_*_amd64.AppImage <span class="highlight">--install</span>
+      <pre><code><span class="comment"># 1. Download and install using the button above</span>
 
 <span class="comment"># 2. Launch "Whis" from your app menu</span>
 
 <span class="comment"># 3. Tray icon → Settings → Configure provider</span>
 
 <span class="comment"># 4. Use Ctrl+Alt+W or tray menu to record!</span></code></pre>
-
-      <!-- Flatpak -->
-      <pre v-else-if="installTab === 'flatpak'"><code><span class="comment"># 1. Install from Flathub</span>
-flatpak install flathub <span class="highlight">ink.whis.Whis</span>
-
-<span class="comment"># 2. Launch "Whis" from your app menu</span>
-
-<span class="comment"># 3. Tray icon → Settings → Configure provider</span>
-
-<span class="comment"># 4. Use Ctrl+Alt+W or tray menu to record!</span></code></pre>
-
-      <!-- deb -->
-      <pre v-else-if="installTab === 'deb'"><code><span class="comment"># 1. Install the package</span>
-sudo apt install ./<span class="highlight">Whis_*_amd64.deb</span>
-
-<span class="comment"># 2. Launch "Whis" from your app menu</span>
-
-<span class="comment"># 3. Tray icon → Settings → Configure provider</span>
-
-<span class="comment"># 4. Use Ctrl+Alt+W or tray menu to record!</span></code></pre>
-
-      <!-- rpm -->
-      <pre v-else-if="installTab === 'rpm'"><code><span class="comment"># 1. Install the package</span>
-sudo dnf install ./<span class="highlight">Whis-*.x86_64.rpm</span>
-
-<span class="comment"># 2. Launch "Whis" from your app menu</span>
-
-<span class="comment"># 3. Tray icon → Settings → Configure provider</span>
-
-<span class="comment"># 4. Use Ctrl+Alt+W or tray menu to record!</span></code></pre>
-
-      <!-- source -->
-      <pre v-else-if="installTab === 'source'"><code><span class="comment"># 1. Install just (if not already installed)</span>
-cargo install just
-
-<span class="comment"># 2. Clone, build, and install</span>
-git clone https://github.com/frankdierolf/whis && cd whis
-<span class="highlight">just install-desktop</span>
-
-<span class="comment"># 3. Launch "Whis" from your app menu</span>
-
-<span class="comment"># 4. Tray icon → Settings → Configure provider</span></code></pre>
-
-      <!-- macOS -->
-      <pre v-else-if="installTab === 'macos'"><code><span class="comment"># 1. Install just (if not already installed)</span>
-cargo install just
-
-<span class="comment"># 2. Clone, build, and install</span>
-git clone https://github.com/frankdierolf/whis && cd whis
-<span class="highlight">just install-desktop</span>
-
-<span class="comment"># 3. Launch Whis from Applications</span>
-
-<span class="comment"># 4. Menu bar icon → Settings → Configure provider</span></code></pre>
-
-      <!-- Windows -->
-      <pre v-else><code><span class="comment"># 1. Install just (if not already installed)</span>
-cargo install just
-
-<span class="comment"># 2. Clone, build, and install</span>
-git clone https://github.com/frankdierolf/whis && cd whis
-<span class="highlight">just install-desktop</span>
-
-<span class="comment"># 3. Launch Whis from Start menu</span>
-
-<span class="comment"># 4. Tray icon → Settings → Configure provider</span>
-
-<span class="comment"># Note: Windows support is experimental</span></code></pre>
     </section>
 
     <!-- Lightbox -->
-    <TheLightbox
+    <Lightbox
       v-model:open="lightboxOpen"
       :images="screenshots"
       :initial-index="lightboxIndex"
@@ -278,51 +159,60 @@ git clone https://github.com/frankdierolf/whis && cd whis
   padding: 2rem;
 }
 
-.view-header {
-  margin-bottom: 2rem;
-  padding-bottom: 1.5rem;
-  border-bottom: 1px solid var(--border-weak);
-}
-
-.view-header h1 {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--text-strong);
-  margin-bottom: 0.5rem;
-}
-
-.view-header p {
-  font-size: 0.9rem;
-  color: var(--text-weak);
-}
-
 .install {
   padding: var(--vertical-padding) var(--padding);
 }
 
-.panel {
-  display: block;
+.install-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-weak);
+  margin-bottom: 0.75rem;
 }
 
-.install-cmd {
-  margin-top: 0.75rem;
-  padding: 0.5rem 0.75rem;
-  background: var(--bg);
-  border: 1px solid var(--border-weak);
+.download-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1.5rem;
+  background: var(--bg-strong);
+  color: var(--text-inverted);
   border-radius: 4px;
-  font-size: 0.8rem;
-  overflow-x: auto;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.15s ease;
 }
 
-.install-cmd code {
-  display: block;
-  white-space: nowrap;
+.download-button:hover {
+  background: var(--bg-strong-hover);
+  transform: translateX(2px);
+}
+
+.download-icon {
+  font-size: 1.1rem;
+}
+
+.download-version {
+  font-size: 0.8rem;
+  font-weight: 400;
+  opacity: 0.7;
 }
 
 .install-note {
-  margin-top: 0.5rem;
+  margin-top: 0.75rem;
   font-size: 0.75rem;
   color: var(--text-weak);
+}
+
+.install-note a {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.install-note a:hover {
+  color: var(--accent);
 }
 
 .features {

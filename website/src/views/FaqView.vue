@@ -1,61 +1,49 @@
 <script setup lang="ts">
 import FaqAccordion from '@/components/FaqAccordion.vue'
+import ViewHeader from '@/components/ViewHeader.vue'
 
 const faqItems = [
   {
-    question: 'CLI or Desktop — which should I use?',
-    answer:
-      '<strong>CLI</strong> if you live in the terminal and want voice-to-text in your shell workflow. <strong>Desktop</strong> if you want a system-wide hotkey that works from any app.',
-  },
-  {
-    question: 'What providers are supported?',
-    answer:
-      'Six providers: <strong>OpenAI</strong>, <strong>Groq</strong> (fastest, cheapest), <strong>Deepgram</strong>, <strong>Mistral</strong>, <strong>ElevenLabs</strong>, and <strong>Local Whisper</strong> (fully offline via whisper.cpp).',
-  },
-  {
-    question: 'Can I use it offline?',
-    answer:
-      'Yes! Run <code>whis setup local</code> to download a whisper model and use Ollama for post-processing. Zero cloud dependency, completely private.',
-  },
-  {
     question: 'What is post-processing?',
     answer:
-      'AI-powered cleanup of your transcript. Removes filler words (um, uh, like), fixes grammar, and preserves technical terms. Use <code>--post-process</code> or enable it in settings.',
+      'AI-powered cleanup of your transcript. It removes filler words (um, uh, like) and fixes grammar while keeping technical terms. Use <code>--post-process</code> flag or enable in Desktop settings.',
   },
   {
     question: 'What do I need?',
     answer:
-      'For cloud: an API key from your chosen provider. For local: just run <code>whis setup local</code> to download models. CLI also needs FFmpeg.',
-  },
-  {
-    question: 'How does hotkey mode work?',
-    answer:
-      'Run <code>whis listen</code> to start the background service. Hit Ctrl+Alt+W to toggle recording from anywhere. Customize with <code>--hotkey</code>.',
+      '<strong>Cloud mode:</strong> An API key from your chosen provider.<br><strong>Local mode:</strong> Just run <code>whis setup local</code> (downloads ~500MB model).<br><strong>CLI only:</strong> Requires FFmpeg for audio encoding.',
   },
   {
     question: 'What about my data?',
     answer:
-      'With cloud providers, audio goes to their API. With local mode, everything stays on your machine. whis doesn\'t store anything.',
+      '<strong>Cloud:</strong> Audio is sent to your provider\'s servers for processing.<br><strong>Local:</strong> Everything stays on your machine—never leaves.<br>whis doesn\'t store recordings or transcripts.',
   },
   {
-    question: 'macOS? Windows?',
-    answer: 'All three platforms supported! Linux (X11 + Wayland), macOS (tested), and Windows (experimental).',
+    question: 'What are presets?',
+    answer:
+      'Output formats for different use cases. Built-in: <code>ai-prompt</code>, <code>email</code>, <code>default</code>. Use with <code>whis --as email</code> or create your own with <code>whis presets new</code>.',
+  },
+  {
+    question: 'Where is my config stored?',
+    answer:
+      'Settings: <code>~/.config/whis/settings.json</code><br>Presets: <code>~/.config/whis/presets/</code><br>Models: <code>~/.local/share/whis/models/</code><br>View current config: <code>whis config --show</code>',
+  },
+  {
+    question: 'Can I pipe output to other tools?',
+    answer:
+      'Yes! Use <code>--print</code> to output to stdout instead of clipboard:<br><code>whis --print | pbcopy</code><br><code>whis -f audio.mp3 --print > transcript.txt</code>',
   },
   {
     question: 'How do I uninstall?',
     answer:
-      'Flatpak: <code>flatpak uninstall ink.whis.Whis</code>. AppImage: <code>./Whis_*_amd64.AppImage --uninstall</code> then delete the file.',
+      '<strong>Flatpak:</strong> <code>flatpak uninstall ink.whis.Whis</code><br><strong>AppImage:</strong> Run with <code>--uninstall</code> flag, then delete the file.<br><strong>Other:</strong> Remove the binary and <code>~/.config/whis/</code> folder.',
   },
 ]
 </script>
 
 <template>
   <div class="faq-content">
-    <!-- Header -->
-    <header class="view-header">
-      <h1>FAQ</h1>
-      <p>Common questions about whis</p>
-    </header>
+    <ViewHeader title="FAQ" subtitle="Common questions about whis" />
 
     <section class="faq">
       <FaqAccordion :items="faqItems" />
@@ -66,24 +54,6 @@ const faqItems = [
 <style scoped>
 .faq-content {
   padding: 2rem;
-}
-
-.view-header {
-  margin-bottom: 2rem;
-  padding-bottom: 1.5rem;
-  border-bottom: 1px solid var(--border-weak);
-}
-
-.view-header h1 {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--text-strong);
-  margin-bottom: 0.5rem;
-}
-
-.view-header p {
-  font-size: 0.9rem;
-  color: var(--text-weak);
 }
 
 .faq {

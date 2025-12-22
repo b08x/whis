@@ -9,6 +9,7 @@ const router = createRouter({
     { path: '/desktop', name: 'desktop', component: () => import('@/views/DesktopView.vue') },
     { path: '/mobile', name: 'mobile', component: () => import('@/views/MobileView.vue') },
     { path: '/faq', name: 'faq', component: () => import('@/views/FaqView.vue') },
+    { path: '/downloads', name: 'downloads', component: () => import('@/views/DownloadsView.vue') },
   ],
 })
 
