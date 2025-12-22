@@ -1066,16 +1066,16 @@ build-release-cli-macos target: _check-cargo
 build-release-desktop: deps-desktop
     #!/usr/bin/env bash
     set -euo pipefail
-    cd crates/whis-desktop/ui && npm run build
-    cd crates/whis-desktop && cargo tauri build
+    (cd crates/whis-desktop/ui && npm run build)
+    (cd crates/whis-desktop && cargo tauri build)
 
 # Build mobile release APK
 [group('release')]
 build-release-mobile: deps-mobile
     #!/usr/bin/env bash
     set -euo pipefail
-    cd crates/whis-mobile/ui && npm run build
-    cd crates/whis-mobile && cargo tauri android build
+    (cd crates/whis-mobile/ui && npm run build)
+    (cd crates/whis-mobile && cargo tauri android build)
 
 # Publish whis-core to crates.io
 [group('release')]
