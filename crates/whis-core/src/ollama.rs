@@ -15,6 +15,15 @@ pub const DEFAULT_OLLAMA_URL: &str = "http://localhost:11434";
 /// Default model for post-processing
 pub const DEFAULT_OLLAMA_MODEL: &str = "qwen2.5:1.5b";
 
+/// Alternative models for post-processing (name, size, description)
+/// qwen2.5:1.5b is the recommended default; these are additional options
+pub const OLLAMA_MODEL_OPTIONS: &[(&str, &str, &str)] = &[
+    ("qwen2.5:1.5b", "1.0 GB", "Recommended - fast, good quality"),
+    ("qwen2.5:3b", "1.9 GB", "Better quality, still fast"),
+    ("ministral:3b", "1.9 GB", "European model, good quality"),
+    ("gemma2:2b", "1.6 GB", "Google model, efficient"),
+];
+
 /// Timeout for Ollama to start
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
@@ -28,9 +37,36 @@ struct TagsResponse {
     models: Vec<ModelInfo>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct ModelInfo {
     name: String,
+    #[serde(default)]
+    size: u64,
+}
+
+/// Model info returned from list_models
+#[derive(Debug, Clone)]
+pub struct OllamaModel {
+    pub name: String,
+    pub size: u64,
+}
+
+impl OllamaModel {
+    /// Format size as human-readable string
+    pub fn size_str(&self) -> String {
+        if self.size == 0 {
+            return String::new();
+        }
+        if self.size >= 1_000_000_000 {
+            format!("{:.1} GB", self.size as f64 / 1_000_000_000.0)
+        } else if self.size >= 1_000_000 {
+            format!("{:.0} MB", self.size as f64 / 1_000_000.0)
+        } else if self.size >= 1_000 {
+            format!("{:.0} KB", self.size as f64 / 1_000.0)
+        } else {
+            format!("{} B", self.size)
+        }
+    }
 }
 
 /// Progress response from Ollama pull API (streaming NDJSON)
@@ -192,6 +228,35 @@ pub fn has_model(url: &str, model: &str) -> Result<bool> {
         .models
         .iter()
         .any(|m| m.name.starts_with(model_base) || m.name == model))
+}
+
+/// List all models available in Ollama
+pub fn list_models(url: &str) -> Result<Vec<OllamaModel>> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .context("Failed to create HTTP client")?;
+
+    let tags_url = format!("{}/api/tags", url.trim_end_matches('/'));
+    let response = client
+        .get(&tags_url)
+        .send()
+        .context("Failed to connect to Ollama")?;
+
+    if !response.status().is_success() {
+        return Err(anyhow!("Ollama returned error: {}", response.status()));
+    }
+
+    let tags: TagsResponse = response.json().context("Failed to parse Ollama response")?;
+
+    Ok(tags
+        .models
+        .into_iter()
+        .map(|m| OllamaModel {
+            name: m.name,
+            size: m.size,
+        })
+        .collect())
 }
 
 /// Pull a model from Ollama registry
