@@ -5,6 +5,10 @@ use std::io::Read;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+use crate::resample::{FrameResampler, WHISPER_SAMPLE_RATE};
+#[cfg(feature = "vad")]
+use crate::vad::VadProcessor;
+
 /// Suppress ALSA warnings on Linux about unavailable PCM plugins (pulse, jack, oss).
 ///
 /// NOTE: This module can be safely removed without affecting functionality.
@@ -89,11 +93,40 @@ pub struct RecordingData {
     channels: u16,
 }
 
+/// Configuration for Voice Activity Detection
+#[cfg(feature = "vad")]
+#[derive(Debug, Clone, Copy)]
+pub struct VadConfig {
+    pub enabled: bool,
+    pub threshold: f32,
+}
+
+#[cfg(feature = "vad")]
+impl Default for VadConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            threshold: 0.5,
+        }
+    }
+}
+
 pub struct AudioRecorder {
     samples: Arc<Mutex<Vec<f32>>>,
+    /// Output sample rate (always 16kHz after resampling)
     sample_rate: u32,
+    /// Output channels (always 1/mono after resampling)
     channels: u16,
     stream: Option<cpal::Stream>,
+    /// Real-time resampler (converts device rate to 16kHz mono)
+    /// Created when recording starts (needs device sample rate)
+    resampler: Option<Arc<Mutex<FrameResampler>>>,
+    /// Voice Activity Detection processor (optional, filters silence)
+    #[cfg(feature = "vad")]
+    vad: Option<Arc<Mutex<VadProcessor>>>,
+    /// VAD configuration for next recording
+    #[cfg(feature = "vad")]
+    vad_config: VadConfig,
 }
 
 // SAFETY: AudioRecorder is always used behind a Mutex in AppState, ensuring
@@ -113,10 +146,25 @@ impl AudioRecorder {
     pub fn new() -> Result<Self> {
         Ok(AudioRecorder {
             samples: Arc::new(Mutex::new(Vec::new())),
-            sample_rate: 44100, // Default sample rate
-            channels: 1,        // Default channels
+            sample_rate: WHISPER_SAMPLE_RATE, // Output is always 16kHz
+            channels: 1,                      // Output is always mono
             stream: None,
+            resampler: None,
+            #[cfg(feature = "vad")]
+            vad: None,
+            #[cfg(feature = "vad")]
+            vad_config: VadConfig::default(),
         })
+    }
+
+    /// Configure Voice Activity Detection for the next recording.
+    /// VAD filters out silence to reduce audio size and improve transcription.
+    #[cfg(feature = "vad")]
+    pub fn set_vad(&mut self, enabled: bool, threshold: f32) {
+        self.vad_config = VadConfig {
+            enabled,
+            threshold: threshold.clamp(0.0, 1.0),
+        };
     }
 
     /// Start recording with an optional specific device name
@@ -150,21 +198,45 @@ impl AudioRecorder {
 
         // Force mono on Android - emulators and some devices don't support stereo input
         #[cfg(target_os = "android")]
-        let channels = 1u16;
+        let device_channels = 1u16;
         #[cfg(not(target_os = "android"))]
-        let channels = config.channels();
+        let device_channels = config.channels();
 
-        self.sample_rate = config.sample_rate().0;
-        self.channels = channels;
+        let device_sample_rate = config.sample_rate().0;
 
         crate::verbose!(
-            "Audio config: {} Hz, {} channel(s)",
-            self.sample_rate,
-            self.channels
+            "Audio device: {} Hz, {} channel(s) -> resampling to {} Hz mono",
+            device_sample_rate,
+            device_channels,
+            WHISPER_SAMPLE_RATE
         );
 
+        // Create real-time resampler (device rate -> 16kHz mono)
+        let resampler = FrameResampler::new(device_sample_rate, device_channels)
+            .context("Failed to create resampler")?;
+        let resampler = Arc::new(Mutex::new(resampler));
+        self.resampler = Some(resampler.clone());
+
+        // Create VAD processor if enabled
+        #[cfg(feature = "vad")]
+        let vad = if self.vad_config.enabled {
+            crate::verbose!("VAD enabled (threshold: {:.2})", self.vad_config.threshold);
+            let vad_processor = VadProcessor::new(true, self.vad_config.threshold)
+                .context("Failed to create VAD processor")?;
+            let vad = Arc::new(Mutex::new(vad_processor));
+            self.vad = Some(vad.clone());
+            Some(vad)
+        } else {
+            self.vad = None;
+            None
+        };
+
+        // Output is always 16kHz mono after resampling
+        self.sample_rate = WHISPER_SAMPLE_RATE;
+        self.channels = 1;
+
         let stream_config = cpal::StreamConfig {
-            channels,
+            channels: device_channels,
             sample_rate: config.sample_rate(),
             buffer_size: cpal::BufferSize::Default,
         };
@@ -172,15 +244,30 @@ impl AudioRecorder {
         let samples = self.samples.clone();
         samples.lock().unwrap().clear();
 
+        #[cfg(feature = "vad")]
         let stream = match config.sample_format() {
             cpal::SampleFormat::F32 => {
-                self.build_stream::<f32>(&device, &stream_config, samples)?
+                self.build_stream::<f32>(&device, &stream_config, samples, resampler, vad)?
             }
             cpal::SampleFormat::I16 => {
-                self.build_stream::<i16>(&device, &stream_config, samples)?
+                self.build_stream::<i16>(&device, &stream_config, samples, resampler, vad)?
             }
             cpal::SampleFormat::U16 => {
-                self.build_stream::<u16>(&device, &stream_config, samples)?
+                self.build_stream::<u16>(&device, &stream_config, samples, resampler, vad)?
+            }
+            _ => anyhow::bail!("Unsupported sample format"),
+        };
+
+        #[cfg(not(feature = "vad"))]
+        let stream = match config.sample_format() {
+            cpal::SampleFormat::F32 => {
+                self.build_stream::<f32>(&device, &stream_config, samples, resampler)?
+            }
+            cpal::SampleFormat::I16 => {
+                self.build_stream::<i16>(&device, &stream_config, samples, resampler)?
+            }
+            cpal::SampleFormat::U16 => {
+                self.build_stream::<u16>(&device, &stream_config, samples, resampler)?
             }
             _ => anyhow::bail!("Unsupported sample format"),
         };
@@ -193,11 +280,14 @@ impl AudioRecorder {
         Ok(())
     }
 
+    #[cfg(feature = "vad")]
     fn build_stream<T>(
         &self,
         device: &cpal::Device,
         config: &cpal::StreamConfig,
         samples: Arc<Mutex<Vec<f32>>>,
+        resampler: Arc<Mutex<FrameResampler>>,
+        vad: Option<Arc<Mutex<VadProcessor>>>,
     ) -> Result<cpal::Stream>
     where
         T: cpal::Sample + cpal::SizedSample,
@@ -208,9 +298,63 @@ impl AudioRecorder {
         let stream = device.build_input_stream(
             config,
             move |data: &[T], _: &cpal::InputCallbackInfo| {
-                let mut samples = samples.lock().unwrap();
-                for &sample in data {
-                    samples.push(cpal::Sample::from_sample(sample));
+                // Convert to f32
+                let f32_samples: Vec<f32> =
+                    data.iter().map(|&s| cpal::Sample::from_sample(s)).collect();
+
+                // Resample to 16kHz mono in real-time
+                let resampled = resampler.lock().unwrap().process(&f32_samples);
+
+                if resampled.is_empty() {
+                    return;
+                }
+
+                // Apply VAD if enabled (filter out silence)
+                let final_samples = if let Some(ref vad) = vad {
+                    vad.lock().unwrap().process(&resampled)
+                } else {
+                    resampled
+                };
+
+                // Store samples (speech only if VAD enabled)
+                if !final_samples.is_empty() {
+                    samples.lock().unwrap().extend_from_slice(&final_samples);
+                }
+            },
+            err_fn,
+            None,
+        )?;
+
+        Ok(stream)
+    }
+
+    #[cfg(not(feature = "vad"))]
+    fn build_stream<T>(
+        &self,
+        device: &cpal::Device,
+        config: &cpal::StreamConfig,
+        samples: Arc<Mutex<Vec<f32>>>,
+        resampler: Arc<Mutex<FrameResampler>>,
+    ) -> Result<cpal::Stream>
+    where
+        T: cpal::Sample + cpal::SizedSample,
+        f32: cpal::FromSample<T>,
+    {
+        let err_fn = |err| eprintln!("Error in audio stream: {err}");
+
+        let stream = device.build_input_stream(
+            config,
+            move |data: &[T], _: &cpal::InputCallbackInfo| {
+                // Convert to f32
+                let f32_samples: Vec<f32> =
+                    data.iter().map(|&s| cpal::Sample::from_sample(s)).collect();
+
+                // Resample to 16kHz mono in real-time
+                let resampled = resampler.lock().unwrap().process(&f32_samples);
+
+                // Store resampled samples
+                if !resampled.is_empty() {
+                    samples.lock().unwrap().extend_from_slice(&resampled);
                 }
             },
             err_fn,
@@ -226,19 +370,55 @@ impl AudioRecorder {
         // Drop the stream first to release the microphone
         self.stream = None;
 
-        // Take ownership of samples and clear the buffer
-        let samples: Vec<f32> = {
+        // Flush the resampler to get any remaining buffered samples
+        let flushed_resampler = if let Some(resampler) = &self.resampler {
+            resampler.lock().unwrap().flush()
+        } else {
+            Vec::new()
+        };
+        self.resampler = None;
+
+        // Process flushed resampler samples through VAD (if enabled) and flush VAD
+        #[cfg(feature = "vad")]
+        let flushed_samples = if let Some(vad) = &self.vad {
+            let mut vad = vad.lock().unwrap();
+            // Process any remaining resampler samples through VAD
+            let mut remaining = vad.process(&flushed_resampler);
+            // Flush VAD to get any buffered speech
+            remaining.extend(vad.flush());
+            remaining
+        } else {
+            flushed_resampler
+        };
+
+        #[cfg(not(feature = "vad"))]
+        let flushed_samples = flushed_resampler;
+
+        #[cfg(feature = "vad")]
+        {
+            self.vad = None;
+        }
+
+        // Take ownership of samples and append flushed samples
+        let mut samples: Vec<f32> = {
             let mut guard = self.samples.lock().unwrap();
             std::mem::take(&mut *guard)
         };
+        samples.extend_from_slice(&flushed_samples);
 
         if samples.is_empty() {
             crate::verbose!("No audio samples captured");
             anyhow::bail!("No audio data recorded");
         }
 
-        let duration_secs = samples.len() as f32 / self.sample_rate as f32 / self.channels as f32;
-        crate::verbose!("Recorded {} samples ({:.1}s)", samples.len(), duration_secs);
+        // Output is always 16kHz mono
+        let duration_secs = samples.len() as f32 / self.sample_rate as f32;
+        crate::verbose!(
+            "Recorded {} samples ({:.1}s at {} Hz mono)",
+            samples.len(),
+            duration_secs,
+            self.sample_rate
+        );
 
         Ok(RecordingData {
             samples,

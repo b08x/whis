@@ -68,6 +68,10 @@ pub struct Cli {
     /// Useful for non-interactive environments like AI assistant shell modes
     #[arg(short = 'd', long, value_parser = parse_duration)]
     pub duration: Option<Duration>,
+
+    /// Disable Voice Activity Detection (records all audio including silence)
+    #[arg(long)]
+    pub no_vad: bool,
 }
 
 #[derive(Subcommand)]
@@ -135,6 +139,15 @@ pub enum Commands {
         /// Set custom post-processing prompt for transcript cleanup
         #[arg(long)]
         post_processing_prompt: Option<String>,
+
+        /// Enable Voice Activity Detection (skips silence during recording)
+        #[arg(long)]
+        vad: Option<bool>,
+
+        /// VAD speech detection threshold (0.0-1.0, default 0.5)
+        /// Lower = more sensitive, Higher = stricter
+        #[arg(long)]
+        vad_threshold: Option<f32>,
 
         /// Show current configuration
         #[arg(long)]

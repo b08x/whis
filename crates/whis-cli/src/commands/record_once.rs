@@ -66,6 +66,7 @@ fn resolve_post_processor(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     post_process_flag: bool,
     preset_name: Option<String>,
@@ -74,6 +75,7 @@ pub fn run(
     input_format: &str,
     print_flag: bool,
     duration: Option<Duration>,
+    no_vad: bool,
 ) -> Result<()> {
     // Use --print flag for output mode (explicit user choice)
     // When --print is set, suppress status messages for clean stdout output
@@ -112,6 +114,18 @@ pub fn run(
     } else {
         // Microphone recording mode (default)
         let mut recorder = AudioRecorder::new()?;
+
+        // Configure VAD based on settings and --no-vad flag
+        #[cfg(feature = "vad")]
+        {
+            let settings = Settings::load();
+            // VAD is enabled if settings say so AND --no-vad is not passed
+            let vad_enabled = settings.vad_enabled && !no_vad;
+            recorder.set_vad(vad_enabled, settings.vad_threshold);
+        }
+        #[cfg(not(feature = "vad"))]
+        let _ = no_vad; // Suppress unused variable warning
+
         recorder.start_recording()?;
 
         if let Some(dur) = duration {

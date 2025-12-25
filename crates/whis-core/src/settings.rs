@@ -47,6 +47,16 @@ pub struct Settings {
     /// Selected microphone device name (None = system default)
     #[serde(default)]
     pub microphone_device: Option<String>,
+    /// Enable Voice Activity Detection to skip silence during recording
+    #[serde(default)]
+    pub vad_enabled: bool,
+    /// VAD speech probability threshold (0.0-1.0, default 0.5)
+    #[serde(default = "default_vad_threshold")]
+    pub vad_threshold: f32,
+}
+
+fn default_vad_threshold() -> f32 {
+    0.5
 }
 
 impl Default for Settings {
@@ -65,6 +75,8 @@ impl Default for Settings {
             #[cfg(feature = "clipboard")]
             clipboard_method: ClipboardMethod::default(),
             microphone_device: None,
+            vad_enabled: false, // Disabled by default for conservative behavior
+            vad_threshold: default_vad_threshold(),
         }
     }
 }

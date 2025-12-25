@@ -30,4 +30,8 @@ dirs = "5"
 crossterm = "0.29"
 
 [features]
-default = []
+default = ["vad", "local-whisper"]
+# Voice Activity Detection to skip silence during recording
+vad = ["whis-core/vad"]
+# Local whisper.cpp transcription (requires model download)
+local-whisper = ["whis-core/local-whisper"]

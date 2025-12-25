@@ -15,6 +15,8 @@ pub fn run(
     language: Option<String>,
     post_processor: Option<String>,
     post_processing_prompt: Option<String>,
+    vad: Option<bool>,
+    vad_threshold: Option<f32>,
     show: bool,
 ) -> Result<()> {
     let mut settings = Settings::load();
@@ -180,6 +182,26 @@ pub fn run(
         println!("Post-processing prompt saved");
     }
 
+    // Handle VAD settings
+    if let Some(enabled) = vad {
+        settings.vad_enabled = enabled;
+        changed = true;
+        println!(
+            "Voice Activity Detection: {}",
+            if enabled { "enabled" } else { "disabled" }
+        );
+    }
+
+    if let Some(threshold) = vad_threshold {
+        if !(0.0..=1.0).contains(&threshold) {
+            eprintln!("Invalid VAD threshold: must be between 0.0 and 1.0");
+            std::process::exit(1);
+        }
+        settings.vad_threshold = threshold;
+        changed = true;
+        println!("VAD threshold set to: {:.2}", threshold);
+    }
+
     // Save if anything changed
     if changed {
         settings.save()?;
@@ -233,6 +255,13 @@ pub fn run(
             println!("Ollama model: (default: qwen2.5:1.5b)");
         }
 
+        // VAD settings
+        println!(
+            "VAD enabled: {}",
+            if settings.vad_enabled { "yes" } else { "no" }
+        );
+        println!("VAD threshold: {:.2}", settings.vad_threshold);
+
         println!("Available --as presets: {}", Preset::all_names().join(", "));
 
         return Ok(());
@@ -256,6 +285,10 @@ pub fn run(
         "  whis config --ollama-model <MODEL>            # For ollama post-processor (default: qwen2.5:1.5b)"
     );
     eprintln!("  whis config --post-processing-prompt <PROMPT>");
+    eprintln!(
+        "  whis config --vad <true|false>                # Enable/disable Voice Activity Detection"
+    );
+    eprintln!("  whis config --vad-threshold <0.0-1.0>         # VAD sensitivity (default: 0.5)");
     eprintln!("  whis config --show");
     std::process::exit(1);
 }

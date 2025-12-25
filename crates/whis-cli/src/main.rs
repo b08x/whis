@@ -31,6 +31,8 @@ fn main() -> Result<()> {
             language,
             post_processor,
             post_processing_prompt,
+            vad,
+            vad_threshold,
             show,
         }) => commands::config::run(
             openai_api_key,
@@ -45,6 +47,8 @@ fn main() -> Result<()> {
             language,
             post_processor,
             post_processing_prompt,
+            vad,
+            vad_threshold,
             show,
         ),
         Some(args::Commands::Presets { action }) => commands::presets::run(action),
@@ -58,6 +62,7 @@ fn main() -> Result<()> {
             &cli.format,
             cli.print,
             cli.duration,
+            cli.no_vad,
         ),
     }
 }
