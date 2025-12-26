@@ -187,7 +187,11 @@ impl AudioRecorder {
         let device = if let Some(name) = device_name {
             // Try to find device by name
             host.input_devices()?
-                .find(|d| d.description().map(|n| n.to_string() == name).unwrap_or(false))
+                .find(|d| {
+                    d.description()
+                        .map(|n| n.to_string() == name)
+                        .unwrap_or(false)
+                })
                 .with_context(|| format!("Audio device '{}' not found", name))?
         } else {
             // Use default device
@@ -195,7 +199,10 @@ impl AudioRecorder {
                 .context("No input device available")?
         };
 
-        let actual_device_name = device.description().map(|d| d.to_string()).unwrap_or_else(|_| "<unknown>".to_string());
+        let actual_device_name = device
+            .description()
+            .map(|d| d.to_string())
+            .unwrap_or_else(|_| "<unknown>".to_string());
         crate::verbose!("Audio device: {}", actual_device_name);
 
         let config = device
@@ -292,9 +299,7 @@ impl AudioRecorder {
     /// as they are recorded. The receiver should be consumed in a separate async task.
     ///
     /// Used by streaming transcription providers like OpenAI Realtime API.
-    pub fn start_recording_streaming(
-        &mut self,
-    ) -> Result<tokio::sync::mpsc::Receiver<Vec<f32>>> {
+    pub fn start_recording_streaming(&mut self) -> Result<tokio::sync::mpsc::Receiver<Vec<f32>>> {
         self.start_recording_streaming_with_device(None)
     }
 
@@ -915,7 +920,10 @@ pub struct AudioDeviceInfo {
 pub fn list_audio_devices() -> Result<Vec<AudioDeviceInfo>> {
     alsa_suppress::init();
     let host = cpal::default_host();
-    let default_device_name = host.default_input_device().and_then(|d| d.description().ok()).map(|d| d.to_string());
+    let default_device_name = host
+        .default_input_device()
+        .and_then(|d| d.description().ok())
+        .map(|d| d.to_string());
 
     let mut devices = Vec::new();
     for device in host.input_devices()? {

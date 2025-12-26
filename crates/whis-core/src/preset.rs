@@ -311,7 +311,10 @@ impl Preset {
     }
 
     /// Load a preset by name from a specific presets directory
-    pub fn load_from(name: &str, presets_dir: &std::path::Path) -> Result<(Preset, PresetSource), String> {
+    pub fn load_from(
+        name: &str,
+        presets_dir: &std::path::Path,
+    ) -> Result<(Preset, PresetSource), String> {
         // Check user presets first
         if let Some(preset) = Self::load_user_from(name, presets_dir) {
             return Ok((preset, PresetSource::User));

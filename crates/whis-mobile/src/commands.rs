@@ -5,7 +5,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_store::StoreExt;
 use whis_core::config::TranscriptionProvider;
 use whis_core::preset::Preset;
-use whis_core::{post_process, OpenAIRealtimeProvider, PostProcessor};
+use whis_core::{OpenAIRealtimeProvider, PostProcessor, post_process};
 
 /// Get the presets directory for this app using Tauri's path API.
 /// This works correctly on Android where dirs::config_dir() returns None.
@@ -98,9 +98,7 @@ async fn apply_post_processing(
         .and_then(|v| v.as_str().map(String::from))
         .unwrap_or_else(|| "none".to_string());
 
-    let post_processor: PostProcessor = post_processor_str
-        .parse()
-        .unwrap_or(PostProcessor::None);
+    let post_processor: PostProcessor = post_processor_str.parse().unwrap_or(PostProcessor::None);
 
     // Skip if disabled
     if post_processor == PostProcessor::None {
@@ -368,7 +366,10 @@ pub struct UpdatePresetInput {
 
 /// Create a new user preset
 #[tauri::command]
-pub fn create_preset(app: tauri::AppHandle, input: CreatePresetInput) -> Result<PresetInfo, String> {
+pub fn create_preset(
+    app: tauri::AppHandle,
+    input: CreatePresetInput,
+) -> Result<PresetInfo, String> {
     use whis_core::preset::Preset;
 
     let presets_dir = get_presets_dir(&app)?;
@@ -402,7 +403,11 @@ pub fn create_preset(app: tauri::AppHandle, input: CreatePresetInput) -> Result<
 
 /// Update an existing user preset
 #[tauri::command]
-pub fn update_preset(app: tauri::AppHandle, name: String, input: UpdatePresetInput) -> Result<(), String> {
+pub fn update_preset(
+    app: tauri::AppHandle,
+    name: String,
+    input: UpdatePresetInput,
+) -> Result<(), String> {
     use whis_core::preset::Preset;
 
     let presets_dir = get_presets_dir(&app)?;
@@ -436,16 +441,14 @@ pub fn delete_preset(app: tauri::AppHandle, name: String) -> Result<(), String> 
     Preset::delete_from(&name, &presets_dir)?;
 
     // If this was the active preset, clear it
-    if let Ok(store) = app.store("settings.json") {
-        if let Some(active) = store
+    if let Ok(store) = app.store("settings.json")
+        && let Some(active) = store
             .get("active_preset")
             .and_then(|v| v.as_str().map(String::from))
-        {
-            if active == name {
-                store.delete("active_preset");
-                let _ = store.save();
-            }
-        }
+        && active == name
+    {
+        store.delete("active_preset");
+        let _ = store.save();
     }
 
     Ok(())

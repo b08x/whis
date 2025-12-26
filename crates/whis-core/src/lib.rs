@@ -30,12 +30,12 @@ pub use config::TranscriptionProvider;
 pub use ollama_manager::{clear_warmup_cache, preload_ollama};
 pub use post_processing::{DEFAULT_POST_PROCESSING_PROMPT, PostProcessor, post_process};
 pub use preset::{Preset, PresetSource};
+#[cfg(feature = "realtime")]
+pub use provider::OpenAIRealtimeProvider;
 #[cfg(feature = "local-transcription")]
 pub use provider::transcribe_raw;
 #[cfg(feature = "local-transcription")]
 pub use provider::transcribe_raw_parakeet;
-#[cfg(feature = "realtime")]
-pub use provider::OpenAIRealtimeProvider;
 pub use provider::{
     DEFAULT_TIMEOUT_SECS, ProgressCallback, TranscriptionBackend, TranscriptionRequest,
     TranscriptionResult, TranscriptionStage, registry,

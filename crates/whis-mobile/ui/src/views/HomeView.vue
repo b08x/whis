@@ -2,9 +2,9 @@
 import type { StatusResponse } from '../types'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { settingsStore } from '../stores/settings'
 import { AudioStreamer } from '../utils/audioStreamer'
 
@@ -277,9 +277,9 @@ watch(provider, async () => {
       <button
         class="btn btn-secondary"
         :class="{
-          recording: isRecording,
-          transcribing: isTranscribing,
-          'post-processing': isPostProcessing
+          'recording': isRecording,
+          'transcribing': isTranscribing,
+          'post-processing': isPostProcessing,
         }"
         :disabled="!canRecord"
         @click="toggleRecording"

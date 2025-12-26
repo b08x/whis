@@ -32,7 +32,8 @@ const canEdit = computed(() => selectedPreset.value && !selectedPreset.value.is_
 
 // Get current preset info for checking is_active
 const currentPresetInfo = computed(() => {
-  if (!selectedPreset.value) return null
+  if (!selectedPreset.value)
+    return null
   return presets.value.find(p => p.name === selectedPreset.value?.name)
 })
 

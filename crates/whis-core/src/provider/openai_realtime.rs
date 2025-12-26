@@ -9,7 +9,7 @@ use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 use tokio_tungstenite::{
     connect_async,
     tungstenite::{
@@ -19,9 +19,7 @@ use tokio_tungstenite::{
     },
 };
 
-use super::{
-    OpenAIProvider, TranscriptionBackend, TranscriptionRequest, TranscriptionResult,
-};
+use super::{OpenAIProvider, TranscriptionBackend, TranscriptionRequest, TranscriptionResult};
 
 const WS_URL: &str = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview";
 const REALTIME_SAMPLE_RATE: u32 = 24000;
@@ -114,10 +112,9 @@ impl OpenAIRealtimeProvider {
             AUTHORIZATION,
             HeaderValue::from_str(&format!("Bearer {api_key}"))?,
         );
-        request.headers_mut().insert(
-            "OpenAI-Beta",
-            HeaderValue::from_static("realtime=v1"),
-        );
+        request
+            .headers_mut()
+            .insert("OpenAI-Beta", HeaderValue::from_static("realtime=v1"));
 
         // Connect to WebSocket
         let (ws_stream, _response) = connect_async(request)
@@ -133,15 +130,15 @@ impl OpenAIRealtimeProvider {
             msg_type: "session.update",
             session: SessionConfig {
                 input_audio_format: "pcm16",
-                input_audio_transcription: InputAudioTranscription {
-                    model: "whisper-1",
-                },
+                input_audio_transcription: InputAudioTranscription { model: "whisper-1" },
                 turn_detection: None, // Disable VAD for transcription-only mode
             },
         };
 
         write
-            .send(Message::Text(serde_json::to_string(&session_update)?.into()))
+            .send(Message::Text(
+                serde_json::to_string(&session_update)?.into(),
+            ))
             .await
             .context("Failed to send session configuration")?;
 
@@ -149,13 +146,13 @@ impl OpenAIRealtimeProvider {
         loop {
             match read.next().await {
                 Some(Ok(Message::Text(text))) => {
-                    let event: RealtimeEvent = serde_json::from_str(&text)
-                        .context("Failed to parse server event")?;
+                    let event: RealtimeEvent =
+                        serde_json::from_str(&text).context("Failed to parse server event")?;
 
-                    if event.event_type == "error" {
-                        if let Some(err) = event.error {
-                            return Err(anyhow!("OpenAI Realtime error: {}", err.message));
-                        }
+                    if event.event_type == "error"
+                        && let Some(err) = event.error
+                    {
+                        return Err(anyhow!("OpenAI Realtime error: {}", err.message));
                     }
 
                     if event.event_type == "session.created"
@@ -185,9 +182,8 @@ impl OpenAIRealtimeProvider {
 
         // Spawn read task to monitor WebSocket during streaming
         // This task handles server messages (errors, pings) while we stream audio
-        let read_handle = tokio::spawn(async move {
-            read_websocket_events(read, error_tx, done_rx).await
-        });
+        let read_handle =
+            tokio::spawn(async move { read_websocket_events(read, error_tx, done_rx).await });
 
         // Stream audio chunks while monitoring for errors
         let mut chunk_count = 0;
@@ -229,10 +225,7 @@ impl OpenAIRealtimeProvider {
                 .collect();
 
             // Convert to bytes (little-endian)
-            let bytes: Vec<u8> = pcm16
-                .iter()
-                .flat_map(|&s| s.to_le_bytes())
-                .collect();
+            let bytes: Vec<u8> = pcm16.iter().flat_map(|&s| s.to_le_bytes()).collect();
 
             // Encode as base64
             let audio_base64 = BASE64.encode(&bytes);
@@ -303,8 +296,7 @@ async fn read_websocket_events<S>(
     mut done_rx: oneshot::Receiver<()>,
 ) -> Result<String>
 where
-    S: futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>>
-        + Unpin,
+    S: futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
 {
     // Phase 1: Monitor for errors during audio streaming
     loop {
@@ -328,12 +320,12 @@ where
                             }
                         };
 
-                        if event.event_type == "error" {
-                            if let Some(e) = event.error {
-                                let err = anyhow!("OpenAI Realtime error: {}", e.message);
-                                let _ = error_tx.send(anyhow::Error::msg(err.to_string()));
-                                return Err(err);
-                            }
+                        if event.event_type == "error"
+                            && let Some(e) = event.error
+                        {
+                            let err = anyhow!("OpenAI Realtime error: {}", e.message);
+                            let _ = error_tx.send(anyhow::Error::msg(err.to_string()));
+                            return Err(err);
                         }
                         // Ignore other events during streaming (status updates, etc.)
                     }
@@ -458,6 +450,8 @@ impl TranscriptionBackend for OpenAIRealtimeProvider {
         request: TranscriptionRequest,
     ) -> Result<TranscriptionResult> {
         // Delegate to regular OpenAI provider for file-based transcription
-        OpenAIProvider.transcribe_async(client, api_key, request).await
+        OpenAIProvider
+            .transcribe_async(client, api_key, request)
+            .await
     }
 }

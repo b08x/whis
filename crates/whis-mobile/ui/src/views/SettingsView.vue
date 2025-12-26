@@ -233,7 +233,9 @@ onMounted(() => {
       <!-- Active Preset (read-only) -->
       <div class="field">
         <label>active preset</label>
-        <div class="field-value">{{ activePresetName }}</div>
+        <div class="field-value">
+          {{ activePresetName }}
+        </div>
       </div>
 
       <!-- Post-Processing -->

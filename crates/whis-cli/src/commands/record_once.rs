@@ -2,13 +2,13 @@ use anyhow::{Result, anyhow};
 use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
 use std::time::Duration;
+#[cfg(feature = "realtime")]
+use whis_core::OpenAIRealtimeProvider;
 use whis_core::{
     AudioRecorder, DEFAULT_POST_PROCESSING_PROMPT, PostProcessor, Preset, RecordingOutput,
     Settings, TranscriptionProvider, copy_to_clipboard, load_audio_file, load_audio_stdin, ollama,
     parallel_transcribe, post_process, transcribe_audio,
 };
-#[cfg(feature = "realtime")]
-use whis_core::OpenAIRealtimeProvider;
 
 use crate::app;
 
