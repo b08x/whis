@@ -1,0 +1,173 @@
+# Automatically create Flathub PR when a release is published
+#
+# This workflow:
+# 1. Regenerates cargo-sources.json and node-sources.json
+# 2. Updates the manifest with new tag and commit hash
+# 3. Adds release notes to metainfo.xml
+# 4. Creates a PR to flathub/ink.whis.Whis
+#
+# Required secret: FLATHUB_TOKEN (PAT with repo access to flathub/ink.whis.Whis)
+
+name: Update Flathub
+
+on:
+  release:
+    types: [published]
+
+  # Allow manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v0.6.3)'
+        required: true
+        type: string
+
+jobs:
+  update-flathub:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout whis repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history for commit hash lookup
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${{ github.event.release.tag_name }}"
+          fi
+          # Strip 'v' prefix if present for version number
+          VERSION_NUM="${VERSION#v}"
+          COMMIT=$(git rev-parse "$VERSION")
+          DATE=$(date +%Y-%m-%d)
+
+          echo "tag=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION_NUM" >> $GITHUB_OUTPUT
+          echo "commit=$COMMIT" >> $GITHUB_OUTPUT
+          echo "date=$DATE" >> $GITHUB_OUTPUT
+
+          echo "Version: $VERSION_NUM"
+          echo "Tag: $VERSION"
+          echo "Commit: $COMMIT"
+          echo "Date: $DATE"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Flatpak generators
+        run: |
+          pip install flatpak-node-generator aiohttp toml
+          git clone --depth 1 https://github.com/flatpak/flatpak-builder-tools.git /tmp/flatpak-builder-tools
+
+      - name: Checkout Flathub repository
+        uses: actions/checkout@v4
+        with:
+          repository: flathub/ink.whis.Whis
+          path: flathub
+          token: ${{ secrets.FLATHUB_TOKEN }}
+          submodules: true
+
+      - name: Generate cargo-sources.json
+        run: |
+          python /tmp/flatpak-builder-tools/cargo/flatpak-cargo-generator.py \
+            Cargo.lock \
+            -o flathub/cargo-sources.json
+          # Validate the generated file
+          test -s flathub/cargo-sources.json || (echo "Failed to generate cargo-sources.json" && exit 1)
+
+      - name: Generate node-sources.json
+        run: |
+          flatpak-node-generator npm \
+            crates/whis-desktop/ui/package-lock.json \
+            -o flathub/node-sources.json
+          # Validate the generated file
+          test -s flathub/node-sources.json || (echo "Failed to generate node-sources.json" && exit 1)
+
+      - name: Update manifest (ink.whis.Whis.yaml)
+        run: |
+          cd flathub
+          TAG="${{ steps.version.outputs.tag }}"
+          COMMIT="${{ steps.version.outputs.commit }}"
+
+          # Update ONLY the whis git source (not wl-clipboard dependency)
+          # Use sed range: from URL line to commit line, replace tag within that range
+          sed -i "/url:.*frankdierolf\/whis/,/commit:/{s/tag: v[0-9.]*/tag: $TAG/}" ink.whis.Whis.yaml
+          sed -i "/url:.*frankdierolf\/whis/,/tag:/{s/commit: [a-f0-9]*/commit: $COMMIT/}" ink.whis.Whis.yaml
+
+          echo "Updated manifest:"
+          grep -B2 -A2 "frankdierolf/whis" ink.whis.Whis.yaml
+
+      - name: Update metainfo.xml with release notes
+        run: |
+          cd flathub
+          VERSION="${{ steps.version.outputs.version }}"
+          DATE="${{ steps.version.outputs.date }}"
+
+          # Check if release already exists
+          if grep -q "version=\"$VERSION\"" ink.whis.Whis.metainfo.xml; then
+            echo "Release $VERSION already exists in metainfo.xml, skipping"
+            exit 0
+          fi
+
+          # Get release body from GitHub API (if this is a release event)
+          DESCRIPTION="Release $VERSION"
+          if [ "${{ github.event_name }}" = "release" ]; then
+            # Extract first line of release body for description
+            BODY="${{ github.event.release.body }}"
+            if [ -n "$BODY" ]; then
+              # Get first non-empty line, strip markdown
+              DESCRIPTION=$(echo "$BODY" | grep -v '^$' | head -1 | sed 's/[#*]//g' | sed 's/^ *//')
+            fi
+          fi
+
+          # Escape special XML characters (including quotes)
+          DESCRIPTION=$(echo "$DESCRIPTION" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g; s/'"'"'/\&apos;/g')
+
+          # Insert new release entry after <releases> tag
+          sed -i "/<releases>/a\\
+    <release version=\"$VERSION\" date=\"$DATE\">\\
+      <description>\\
+        <p>$DESCRIPTION</p>\\
+      </description>\\
+    </release>" ink.whis.Whis.metainfo.xml
+
+          echo "Added release entry for $VERSION"
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          path: flathub
+          token: ${{ secrets.FLATHUB_TOKEN }}
+          branch: update-${{ steps.version.outputs.tag }}
+          delete-branch: true
+          title: "Update to ${{ steps.version.outputs.tag }}"
+          body: |
+            Automated update from upstream release.
+
+            **Version:** ${{ steps.version.outputs.version }}
+            **Commit:** `${{ steps.version.outputs.commit }}`
+
+            **Changes:**
+            - Updated git source to ${{ steps.version.outputs.tag }}
+            - Regenerated cargo-sources.json
+            - Regenerated node-sources.json
+            - Added release notes to metainfo.xml
+
+            **Release:** ${{ github.event.release.html_url || 'Manual trigger' }}
+
+            ---
+            *This PR was automatically created by the [flathub-update workflow](https://github.com/frankdierolf/whis/actions/workflows/flathub-update.yml).*
+          commit-message: |
+            Update to ${{ steps.version.outputs.tag }}
+
+            - Update git source to ${{ steps.version.outputs.tag }} (commit ${{ steps.version.outputs.commit }})
+            - Regenerate cargo-sources.json and node-sources.json
+            - Add release notes to metainfo.xml
+          labels: |
+            automated
+            release

@@ -1048,6 +1048,53 @@ clean-all:
 # RELEASE (CI/CD recipes for GitHub Actions)
 # ============================================================================
 
+# Create and push a release tag (run after version bump commit)
+[group('release')]
+release version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Creating release v{{version}}..."
+    git tag -a "v{{version}}" -m "v{{version}}"
+    git push origin main --tags
+    echo ""
+    echo "Release v{{version}} pushed!"
+    echo "CI will build artifacts: https://github.com/frankdierolf/whis/actions"
+
+# --- Frank's personal recipes (hidden from `just --list`) ---
+
+# Bump version across all files using Claude Code
+[private]
+[group('release')]
+bump-version version:
+    claude --dangerously-skip-permissions -p "Update all version references in this codebase to {{version}}. Find and update versions in: Cargo.toml (workspace version), all tauri.conf.json files, all package.json files, and any Vue files with hardcoded version strings. Update each file you find. Do not commit the changes."
+
+# Update local Flathub checkout (for testing before automated PR)
+[private]
+[group('release')]
+[linux]
+flathub-update:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    FLATHUB_DIR="${FLATHUB_DIR:-$HOME/repos/ink.whis.Whis}"
+    if [ ! -d "$FLATHUB_DIR" ]; then
+        echo "Error: Flathub repo not found at $FLATHUB_DIR"
+        echo "Set FLATHUB_DIR or clone: git clone https://github.com/flathub/ink.whis.Whis.git $FLATHUB_DIR"
+        exit 1
+    fi
+    echo "Generating Flathub sources..."
+    echo "  cargo-sources.json..."
+    python ~/repos/flatpak-builder-tools/cargo/flatpak-cargo-generator.py \
+        Cargo.lock -o "$FLATHUB_DIR/cargo-sources.json"
+    echo "  node-sources.json..."
+    flatpak-node-generator npm \
+        crates/whis-desktop/ui/package-lock.json \
+        -o "$FLATHUB_DIR/node-sources.json"
+    echo ""
+    echo "Done! Source files updated in $FLATHUB_DIR"
+    echo "Now manually update:"
+    echo "  - ink.whis.Whis.yaml (tag and commit)"
+    echo "  - ink.whis.Whis.metainfo.xml (release entry)"
+
 # Build CLI release binary (native)
 [group('release')]
 build-release-cli: _check-cargo
