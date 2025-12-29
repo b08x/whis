@@ -1,4 +1,4 @@
-name: Website
+name: Deploy Website
 
 on:
   push:
