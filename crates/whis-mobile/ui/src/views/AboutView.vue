@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { openUrl } from '@tauri-apps/plugin-opener'
 
-const appVersion = '0.6.2'
+const appVersion = '0.6.3'
 const appSite = 'https://whis.ink'
 const appRepo = 'https://github.com/frankdierolf/whis'
 </script>
