@@ -126,15 +126,11 @@ jobs:
           fi
 
           # Escape special XML characters (including quotes)
-          DESCRIPTION=$(echo "$DESCRIPTION" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g; s/'"'"'/\&apos;/g')
+          DESCRIPTION=$(echo "$DESCRIPTION" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g' | sed "s/'/\&apos;/g")
 
-          # Insert new release entry after <releases> tag
-          sed -i "/<releases>/a\\
-    <release version=\"$VERSION\" date=\"$DATE\">\\
-      <description>\\
-        <p>$DESCRIPTION</p>\\
-      </description>\\
-    </release>" ink.whis.Whis.metainfo.xml
+          # Build release entry and insert after <releases> tag
+          RELEASE_ENTRY="    <release version=\"$VERSION\" date=\"$DATE\"><description><p>$DESCRIPTION</p></description></release>"
+          sed -i "s|<releases>|<releases>\n$RELEASE_ENTRY|" ink.whis.Whis.metainfo.xml
 
           echo "Added release entry for $VERSION"
 
