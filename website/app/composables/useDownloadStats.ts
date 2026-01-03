@@ -1,62 +1,45 @@
-import { computed } from 'vue'
-import { useCratesDownloads } from './useCratesDownloads'
-import { useGitHubDownloads } from './useGitHubDownloads'
-import { useFlathubDownloads } from './useFlathubDownloads'
+import { computed, onMounted, ref } from 'vue'
 
-export interface DownloadStats {
+interface DownloadStats {
+  timestamp: string
+  crates: number | null
+  github: number | null
+  flathub: number | null
   total: number | null
-  breakdown: {
-    crates: number | null
-    github: number | null
-    flathub: number | null
-  }
-  loading: boolean
-  hasError: boolean
 }
 
 export function useDownloadStats() {
-  const crates = useCratesDownloads()
-  const github = useGitHubDownloads()
-  const flathub = useFlathubDownloads()
+  const stats = ref<DownloadStats | null>(null)
+  const error = ref<Error | null>(null)
+  const loading = ref(true)
 
-  const total = computed<number | null>(() => {
-    const sources = [
-      crates.count.value,
-      github.count.value,
-      flathub.count.value,
-    ]
-
-    // Filter out null values
-    const validSources = sources.filter(v => v !== null) as number[]
-
-    // Return null if no sources loaded successfully
-    if (validSources.length === 0)
-      return null
-
-    // Sum all valid sources
-    return validSources.reduce((sum, val) => sum + val, 0)
+  onMounted(async () => {
+    try {
+      const response = await fetch('/stats.json')
+      if (response.ok) {
+        stats.value = await response.json()
+      }
+    }
+    catch (e) {
+      error.value = e as Error
+      // Silent fail - stats remain null
+    }
+    finally {
+      loading.value = false
+    }
   })
 
-  const loading = computed(() =>
-    crates.loading.value || github.loading.value || flathub.loading.value,
-  )
-
-  const hasError = computed(() =>
-    crates.error.value !== null
-    || github.error.value !== null
-    || flathub.error.value !== null,
-  )
-
+  const total = computed(() => stats.value?.total ?? null)
   const breakdown = computed(() => ({
-    crates: crates.count.value,
-    github: github.count.value,
-    flathub: flathub.count.value,
+    crates: stats.value?.crates ?? null,
+    github: stats.value?.github ?? null,
+    flathub: stats.value?.flathub ?? null,
   }))
 
   return {
     total,
     breakdown,
     loading,
-    hasError,
+    error,
   }
 }

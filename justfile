@@ -953,7 +953,7 @@ dev-website: deps-website
 build-website: deps-website
     #!/usr/bin/env bash
     set -euo pipefail
-    cd website && npm run build
+    cd website && node scripts/fetch-stats.mjs && npm run build
 
 # Lint website code
 [group('website')]

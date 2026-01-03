@@ -58,4 +58,4 @@ The installation count shown on [whis.ink](https://whis.ink) aggregates download
 - **[GitHub Releases](https://github.com/frankdierolf/whis/releases)** - Binary downloads (AppImage, deb, rpm, DMG, MSI, etc.)
 - **[Flathub](https://flathub.org/apps/ink.whis.Whis)** - Flatpak installs
 
-Implementation: [`app/composables/useDownloadStats.ts`](app/composables/useDownloadStats.ts)
+Stats are fetched at build-time to avoid CORS issues. Implementation: [`scripts/fetch-stats.mjs`](scripts/fetch-stats.mjs) and [`app/composables/useDownloadStats.ts`](app/composables/useDownloadStats.ts)
