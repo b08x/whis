@@ -8,6 +8,7 @@ description = "Core library for whis voice-to-text functionality"
 
 [dependencies]
 anyhow.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -33,12 +34,9 @@ rubato = "0.16"
 # Voice Activity Detection using Silero VAD model
 voice_activity_detector = { version = "0.2", optional = true }
 
-# Local Whisper transcription (whisper.cpp via whisper-rs)
-whisper-rs = { version = "0.15.1", optional = true }
+# Local transcription via transcribe-rs (unified library for Whisper + Parakeet)
+transcribe-rs = { version = "0.1.4", optional = true }
 minimp3 = { version = "0.6", optional = true }
-
-# Local Parakeet transcription (NVIDIA Parakeet via ONNX)
-parakeet-rs = { version = "0.2", optional = true }
 
 # Archive extraction for Parakeet model downloads
 tar = { version = "0.4", optional = true }
@@ -54,8 +52,8 @@ ffmpeg = ["hound"]
 clipboard = ["arboard"]
 # Mobile: use embedded mp3lame encoder (no external process needed)
 embedded-encoder = ["mp3lame-encoder"]
-# Local transcription (Whisper + Parakeet models)
-local-transcription = ["whisper-rs", "minimp3", "parakeet-rs", "tar", "flate2", "tempfile"]
+# Local transcription (Whisper + Parakeet via transcribe-rs)
+local-transcription = ["minimp3", "transcribe-rs", "tar", "flate2", "tempfile"]
 # Voice Activity Detection to skip silence during recording
 vad = ["voice_activity_detector"]
 # OpenAI Realtime API for streaming transcription

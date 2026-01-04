@@ -1,12 +1,7 @@
-//! Voice Activity Detection (VAD) using Silero model
+//! Voice Activity Detection (VAD) processor implementation
 //!
 //! This module provides real-time speech detection to skip silence during recording,
 //! reducing audio size and improving transcription quality.
-//!
-//! Uses "Smoothed VAD" approach with:
-//! - **Prefill**: Buffers audio BEFORE speech detected to capture word beginnings
-//! - **Onset detection**: Requires consecutive speech frames to prevent noise false-positives
-//! - **Hangover**: Continues recording after silence to catch trailing syllables
 
 use std::collections::VecDeque;
 

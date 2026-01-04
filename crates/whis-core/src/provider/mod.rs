@@ -1,11 +1,46 @@
-//! Transcription provider trait and registry
+//! Transcription Provider Module
 //!
 //! This module provides an extensible architecture for adding new transcription providers.
-//! Each provider implements the `TranscriptionBackend` trait.
+//! All providers implement the `TranscriptionBackend` trait.
+//!
+//! # Architecture
+//!
+//! ```text
+//! Provider System
+//!   ├── Registry     - Provider lookup and lifecycle
+//!   ├── Base         - Shared HTTP logic (OpenAI-compatible APIs)
+//!   └── Providers    - Individual provider implementations
+//!       ├── Cloud    - OpenAI, Mistral, Groq, Deepgram, ElevenLabs
+//!       └── Local    - Whisper, Parakeet
+//! ```
+//!
+//! # Provider Types
+//!
+//! **Cloud Providers** (OpenAI-compatible format):
+//! - OpenAI Whisper API
+//! - Groq Whisper API
+//! - Mistral Voxtral API
+//!
+//! **Cloud Providers** (Custom format):
+//! - Deepgram Nova API
+//! - ElevenLabs API
+//!
+//! **Local Providers** (No API key required):
+//! - Local Whisper (via transcribe-rs)
+//! - Local Parakeet (via transcribe-rs)
+//!
+//! # Adding a New Provider
+//!
+//! 1. Create a new file in `provider/` (e.g., `myprovider.rs`)
+//! 2. Implement `TranscriptionBackend` trait
+//! 3. Add variant to `TranscriptionProvider` enum in `config.rs`
+//! 4. Register in `ProviderRegistry::new()`
+//! 5. Re-export in this module's public API
+//!
+//! For OpenAI-compatible APIs, use the shared helpers from `base::openai_compatible`.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use async_trait::async_trait;
-use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
@@ -43,13 +78,15 @@ impl TranscriptionStage {
 /// Progress callback type for reporting transcription stages
 pub type ProgressCallback = Arc<dyn Fn(TranscriptionStage) + Send + Sync>;
 
+mod base;
 mod deepgram;
 mod elevenlabs;
+pub mod error;
 mod groq;
 #[cfg(feature = "local-transcription")]
 mod local_parakeet;
 #[cfg(feature = "local-transcription")]
-mod local_whisper;
+pub mod local_whisper;
 mod mistral;
 mod openai;
 #[cfg(feature = "realtime")]
@@ -59,6 +96,7 @@ mod openai_realtime;
 pub const DEFAULT_TIMEOUT_SECS: u64 = 300;
 
 pub use deepgram::DeepgramProvider;
+pub use error::ProviderError;
 pub use elevenlabs::ElevenLabsProvider;
 pub use groq::GroqProvider;
 #[cfg(feature = "local-transcription")]
@@ -69,6 +107,12 @@ pub use local_parakeet::transcribe_raw as transcribe_raw_parakeet;
 pub use local_whisper::LocalWhisperProvider;
 #[cfg(feature = "local-transcription")]
 pub use local_whisper::transcribe_raw;
+#[cfg(feature = "local-transcription")]
+pub use local_whisper::{
+    set_keep_loaded as whisper_set_keep_loaded,
+    preload_model as whisper_preload_model,
+    unload_model as whisper_unload_model,
+};
 pub use mistral::MistralProvider;
 pub use openai::OpenAIProvider;
 #[cfg(feature = "realtime")]
@@ -118,122 +162,8 @@ pub struct TranscriptionResult {
     pub text: String,
 }
 
-/// Response structure for OpenAI-compatible APIs (OpenAI, Groq, Mistral)
-#[derive(Deserialize)]
-struct OpenAICompatibleResponse {
-    text: String,
-}
-
-/// Helper for OpenAI-compatible transcription APIs (sync version)
-///
-/// Used by OpenAI, Groq, and Mistral which share the same API format.
-pub(crate) fn openai_compatible_transcribe_sync(
-    api_url: &str,
-    model: &str,
-    api_key: &str,
-    request: TranscriptionRequest,
-) -> Result<TranscriptionResult> {
-    // Report uploading stage
-    request.report(TranscriptionStage::Uploading);
-
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECS))
-        .build()
-        .context("Failed to create HTTP client")?;
-
-    let mut form = reqwest::blocking::multipart::Form::new()
-        .text("model", model.to_string())
-        .part(
-            "file",
-            reqwest::blocking::multipart::Part::bytes(request.audio_data.clone())
-                .file_name(request.filename.clone())
-                .mime_str(&request.mime_type)?,
-        );
-
-    if let Some(lang) = request.language.clone() {
-        form = form.text("language", lang);
-    }
-
-    // Report transcribing stage (request sent, waiting for response)
-    request.report(TranscriptionStage::Transcribing);
-
-    let response = client
-        .post(api_url)
-        .header("Authorization", format!("Bearer {api_key}"))
-        .multipart(form)
-        .send()
-        .context("Failed to send request")?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_text = response
-            .text()
-            .unwrap_or_else(|_| "Unknown error".to_string());
-        anyhow::bail!("API error ({status}): {error_text}");
-    }
-
-    let text = response.text().context("Failed to get response text")?;
-    let resp: OpenAICompatibleResponse =
-        serde_json::from_str(&text).context("Failed to parse API response")?;
-
-    Ok(TranscriptionResult { text: resp.text })
-}
-
-/// Helper for OpenAI-compatible transcription APIs (async version)
-///
-/// Used by OpenAI, Groq, and Mistral which share the same API format.
-pub(crate) async fn openai_compatible_transcribe_async(
-    client: &reqwest::Client,
-    api_url: &str,
-    model: &str,
-    api_key: &str,
-    request: TranscriptionRequest,
-) -> Result<TranscriptionResult> {
-    // Report uploading stage
-    request.report(TranscriptionStage::Uploading);
-
-    let mut form = reqwest::multipart::Form::new()
-        .text("model", model.to_string())
-        .part(
-            "file",
-            reqwest::multipart::Part::bytes(request.audio_data.clone())
-                .file_name(request.filename.clone())
-                .mime_str(&request.mime_type)?,
-        );
-
-    if let Some(lang) = request.language.clone() {
-        form = form.text("language", lang);
-    }
-
-    // Report transcribing stage
-    request.report(TranscriptionStage::Transcribing);
-
-    let response = client
-        .post(api_url)
-        .header("Authorization", format!("Bearer {api_key}"))
-        .multipart(form)
-        .send()
-        .await
-        .context("Failed to send request")?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Unknown error".to_string());
-        anyhow::bail!("API error ({status}): {error_text}");
-    }
-
-    let text = response
-        .text()
-        .await
-        .context("Failed to get response text")?;
-    let resp: OpenAICompatibleResponse =
-        serde_json::from_str(&text).context("Failed to parse API response")?;
-
-    Ok(TranscriptionResult { text: resp.text })
-}
+// Import shared helpers from base module
+pub(crate) use base::{openai_compatible_transcribe_async, openai_compatible_transcribe_sync};
 
 /// Trait for transcription providers
 ///

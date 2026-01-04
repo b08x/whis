@@ -73,18 +73,81 @@ pub fn transcribe_raw(model_path: &str, samples: Vec<f32>) -> Result<Transcripti
 }
 
 /// Internal function to transcribe PCM samples using Parakeet
+///
+/// ONNX Runtime has memory constraints with long audio in Parakeet models.
+/// This function automatically chunks audio longer than 90 seconds to avoid ORT errors.
 fn transcribe_samples(model_path: &str, samples: Vec<f32>) -> Result<TranscriptionResult> {
-    use parakeet_rs::{ParakeetTDT, Transcriber};
+    use transcribe_rs::{
+        TranscriptionEngine,
+        engines::parakeet::{ParakeetEngine, ParakeetInferenceParams, ParakeetModelParams, TimestampGranularity},
+    };
+    use std::path::Path;
 
-    // Load the Parakeet TDT model (multilingual, uses vocab.txt)
-    let mut parakeet =
-        ParakeetTDT::from_pretrained(model_path, None).context("Failed to load Parakeet model")?;
+    // Empirically tested: Parakeet works well up to ~90 seconds
+    // Beyond that, ONNX Runtime can hit memory limits (ORT error)
+    const CHUNK_SIZE: usize = 1_440_000; // 90 seconds at 16kHz
+    const OVERLAP: usize = 16_000; // 1 second overlap for context at chunk boundaries
 
-    // Transcribe the audio samples
-    // samples should be 16kHz mono
-    let result = parakeet
-        .transcribe_samples(samples, 16000, 1, None)
-        .context("Parakeet transcription failed")?;
+    // Load model once and reuse for all chunks (Phase 1: Model Reuse optimization)
+    let mut engine = ParakeetEngine::new();
+    engine
+        .load_model_with_params(
+            Path::new(model_path),
+            ParakeetModelParams::int8(),
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to load Parakeet model: {}", e))?;
+
+    // Configure inference parameters
+    let params = ParakeetInferenceParams {
+        timestamp_granularity: TimestampGranularity::Segment,
+    };
+
+    // If audio is short, transcribe directly (no chunking needed)
+    if samples.len() <= CHUNK_SIZE {
+        return transcribe_chunk_with_engine(&mut engine, samples, &params);
+    }
+
+    // Split long audio into chunks with overlap
+    let mut chunks = Vec::new();
+    let mut start = 0;
+    while start < samples.len() {
+        let end = (start + CHUNK_SIZE).min(samples.len());
+        chunks.push(&samples[start..end]);
+        start += CHUNK_SIZE - OVERLAP;
+    }
+
+    // Transcribe each chunk using the same engine instance
+    let mut results = Vec::new();
+    for (i, chunk) in chunks.iter().enumerate() {
+        eprintln!("Transcribing chunk {}/{} ({:.1}s)...",
+                  i + 1, chunks.len(), chunk.len() as f32 / 16000.0);
+
+        let result = transcribe_chunk_with_engine(&mut engine, chunk.to_vec(), &params)?;
+        results.push(result.text);
+    }
+
+    // Concatenate chunk results with space separator
+    Ok(TranscriptionResult {
+        text: results.join(" "),
+    })
+}
+
+/// Transcribe a single chunk of audio using an already-loaded engine
+///
+/// This function is used internally by `transcribe_samples()` to reuse the same
+/// engine instance across multiple chunks, avoiding repeated model loading.
+fn transcribe_chunk_with_engine(
+    engine: &mut transcribe_rs::engines::parakeet::ParakeetEngine,
+    samples: Vec<f32>,
+    params: &transcribe_rs::engines::parakeet::ParakeetInferenceParams,
+) -> Result<TranscriptionResult> {
+    use transcribe_rs::TranscriptionEngine;
+
+    // Transcribe the audio samples using the pre-loaded engine
+    // transcribe-rs expects 16kHz mono samples
+    let result = engine
+        .transcribe_samples(samples, Some(params.clone()))
+        .map_err(|e| anyhow::anyhow!("Parakeet transcription failed: {}", e))?;
 
     Ok(TranscriptionResult {
         text: result.text.trim().to_string(),

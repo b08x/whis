@@ -182,6 +182,123 @@ pub async fn parallel_transcribe(
     Ok(merge_transcriptions(results))
 }
 
+/// Local audio chunk (raw f32 samples instead of encoded bytes)
+pub struct LocalAudioChunk {
+    pub index: usize,
+    pub samples: Vec<f32>,
+    pub has_leading_overlap: bool,
+}
+
+/// Transcribe local audio chunks in parallel (for Parakeet progressive transcription)
+///
+/// Adapts the cloud provider parallel pattern for local CPU-bound transcription.
+/// Uses tokio::task::spawn_blocking for each chunk to avoid blocking the async runtime.
+///
+/// # Arguments
+/// * `model_path` - Path to Parakeet model directory
+/// * `chunks` - Audio chunks to transcribe (raw 16kHz mono f32 samples)
+/// * `num_workers` - Maximum concurrent workers (semaphore limit)
+/// * `progress_callback` - Optional progress reporting callback
+pub async fn parallel_transcribe_local(
+    model_path: &str,
+    chunks: Vec<LocalAudioChunk>,
+    num_workers: usize,
+    progress_callback: Option<Box<dyn Fn(usize, usize) + Send + Sync>>,
+) -> Result<String> {
+    let total_chunks = chunks.len();
+
+    // Semaphore to limit concurrent workers
+    let semaphore = Arc::new(Semaphore::new(num_workers));
+    let model_path = Arc::new(model_path.to_string());
+    let completed = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let progress_callback = progress_callback.map(Arc::new);
+    let error_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    // Process chunks with worker limit (semaphore controls concurrency)
+    let mut handles = Vec::with_capacity(total_chunks);
+
+    for chunk in chunks {
+        let model_path = model_path.clone();
+        let completed = completed.clone();
+        let progress_callback = progress_callback.clone();
+        let error_flag = error_flag.clone();
+
+        // Acquire semaphore permit BEFORE spawning blocking task
+        // This limits concurrent workers: if num_workers permits are held,
+        // this await will block until a worker finishes and releases its permit
+        let permit = semaphore.clone().acquire_owned().await?;
+
+        let handle = tokio::task::spawn_blocking(move || {
+            // Hold permit for duration of transcription
+            let _permit = permit;
+
+            // Check if another worker already failed (fail-fast)
+            if error_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err(anyhow::anyhow!("Another worker failed, aborting"));
+            }
+
+            let chunk_index = chunk.index;
+            let has_leading_overlap = chunk.has_leading_overlap;
+
+            // Transcribe using Parakeet
+            let result = crate::provider::transcribe_raw_parakeet(
+                &model_path,
+                chunk.samples,
+            );
+
+            let transcription = match result {
+                Ok(r) => ChunkTranscription {
+                    index: chunk_index,
+                    text: r.text,
+                    has_leading_overlap,
+                },
+                Err(e) => {
+                    error_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                    return Err(e);
+                }
+            };
+
+            let done = completed.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            if let Some(ref cb) = progress_callback {
+                cb(done, total_chunks);
+            }
+
+            Ok(transcription)
+        });
+
+        handles.push(handle);
+    }
+
+    // Collect results
+    let mut results = Vec::with_capacity(total_chunks);
+    let mut errors = Vec::new();
+
+    for handle in handles {
+        match handle.await {
+            Ok(Ok(transcription)) => results.push(transcription),
+            Ok(Err(e)) => errors.push(e),
+            Err(e) => errors.push(anyhow::anyhow!("Task panicked: {e}")),
+        }
+    }
+
+    // If any chunks failed, return error with details
+    if !errors.is_empty() {
+        let error_msgs: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+        anyhow::bail!(
+            "Failed to transcribe {} of {} chunks:\n{}",
+            errors.len(),
+            total_chunks,
+            error_msgs.join("\n")
+        );
+    }
+
+    // Sort by index to ensure correct order
+    results.sort_by_key(|r| r.index);
+
+    // Merge transcriptions (reuse cloud provider overlap handling)
+    Ok(merge_transcriptions(results))
+}
+
 /// Merge transcription results, handling overlaps
 fn merge_transcriptions(transcriptions: Vec<ChunkTranscription>) -> String {
     if transcriptions.is_empty() {
