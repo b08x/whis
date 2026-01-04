@@ -1,7 +1,15 @@
 {
-  "timestamp": "2026-01-03T20:22:27.581Z",
-  "crates": 381,
-  "github": 245,
+  "timestamp": "2026-01-04T09:59:11.494Z",
+  "crates": 382,
+  "github": 248,
   "flathub": 942,
-  "total": 1568
+  "aurPopularity": 1,
+  "githubStars": 16,
+  "githubForks": 6,
+  "githubWatchers": 16,
+  "githubContributors": 4,
+  "versionCrates": "0.6.4",
+  "versionAur": "0.6.4-1",
+  "versionFlathub": "0.6.3",
+  "total": 1572
 }

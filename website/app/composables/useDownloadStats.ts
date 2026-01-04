@@ -6,6 +6,14 @@ interface DownloadStats {
   github: number | null
   flathub: number | null
   total: number | null
+  aurPopularity: number | null
+  githubStars: number | null
+  githubForks: number | null
+  githubWatchers: number | null
+  githubContributors: number | null
+  versionCrates: string | null
+  versionAur: string | null
+  versionFlathub: string | null
 }
 
 export function useDownloadStats() {
