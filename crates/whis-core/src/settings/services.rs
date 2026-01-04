@@ -11,7 +11,7 @@ pub struct ServicesSettings {
 }
 
 /// Configuration for Ollama local LLM service.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct OllamaConfig {
     /// Ollama server URL (default: http://localhost:11434)
     #[serde(default)]
@@ -20,15 +20,6 @@ pub struct OllamaConfig {
     /// Ollama model name for post-processing (default: qwen2.5:1.5b)
     #[serde(default)]
     pub model: Option<String>,
-}
-
-impl Default for OllamaConfig {
-    fn default() -> Self {
-        Self {
-            url: None,
-            model: None,
-        }
-    }
 }
 
 impl OllamaConfig {

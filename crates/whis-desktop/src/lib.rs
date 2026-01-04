@@ -74,13 +74,10 @@ pub fn run(start_in_tray: bool) {
         })
         .on_window_event(|window, event| {
             use tauri::WindowEvent;
-            match event {
-                WindowEvent::CloseRequested { api, .. } => {
-                    // Prevent immediate close - emit event to frontend for graceful shutdown
-                    api.prevent_close();
-                    let _ = window.emit("window-close-requested", ());
-                }
-                _ => {}
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                // Prevent immediate close - emit event to frontend for graceful shutdown
+                api.prevent_close();
+                let _ = window.emit("window-close-requested", ());
             }
         })
         .invoke_handler(tauri::generate_handler![

@@ -41,6 +41,8 @@ use whis_core::{Preset, RecordingOutput};
 /// Configuration for the record command
 #[derive(Debug, Clone)]
 pub struct RecordConfig {
+    /// Audio input source
+    pub input_source: InputSource,
     /// Whether to enable post-processing
     pub post_process: bool,
     /// Preset to apply to output
@@ -58,6 +60,7 @@ pub struct RecordConfig {
 impl RecordConfig {
     /// Create a new record configuration
     pub fn new(
+        input_source: InputSource,
         post_process: bool,
         preset_name: Option<String>,
         print: bool,
@@ -74,6 +77,7 @@ impl RecordConfig {
         };
 
         Ok(Self {
+            input_source,
             post_process,
             preset,
             print,

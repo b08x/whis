@@ -30,7 +30,7 @@ pub trait AudioEncoder: Send + Sync {
 pub fn create_encoder() -> Box<dyn AudioEncoder> {
     #[cfg(feature = "ffmpeg")]
     {
-        return Box::new(ffmpeg::FfmpegEncoder::new());
+        Box::new(ffmpeg::FfmpegEncoder::new())
     }
 
     #[cfg(all(feature = "embedded-encoder", not(feature = "ffmpeg")))]

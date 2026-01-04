@@ -103,10 +103,10 @@ fn get_or_load_engine(model_path: &str) -> Result<()> {
     let mut cache = get_cache().lock().unwrap();
 
     // Check if already loaded with same path
-    if let Some(ref cached) = *cache {
-        if cached.path == model_path {
-            return Ok(()); // Already loaded
-        }
+    if let Some(ref cached) = *cache
+        && cached.path == model_path
+    {
+        return Ok(()); // Already loaded
     }
 
     // Validate model path
@@ -244,11 +244,11 @@ pub fn preload_model(path: &str) {
     // Check if model is already loaded
     {
         let cache = get_cache().lock().unwrap();
-        if let Some(ref cached) = *cache {
-            if cached.path == path {
-                crate::verbose!("Engine already cached, skipping preload");
-                return;
-            }
+        if let Some(ref cached) = *cache
+            && cached.path == path
+        {
+            crate::verbose!("Engine already cached, skipping preload");
+            return;
         }
     }
 

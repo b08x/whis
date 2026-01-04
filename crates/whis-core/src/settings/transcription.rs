@@ -9,7 +9,7 @@ use crate::config::TranscriptionProvider;
 use crate::model::{ModelType, ParakeetModel};
 
 /// Settings for transcription providers and models.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TranscriptionSettings {
     /// Active transcription provider
     #[serde(default)]
@@ -41,17 +41,6 @@ pub struct LocalModelsConfig {
     /// (e.g., ~/.local/share/whis/models/parakeet/parakeet-tdt-0.6b-v3-int8)
     #[serde(default)]
     pub parakeet_path: Option<String>,
-}
-
-impl Default for TranscriptionSettings {
-    fn default() -> Self {
-        Self {
-            provider: TranscriptionProvider::default(),
-            language: None,
-            api_keys: HashMap::new(),
-            local_models: LocalModelsConfig::default(),
-        }
-    }
 }
 
 impl TranscriptionSettings {

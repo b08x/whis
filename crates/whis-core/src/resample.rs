@@ -90,10 +90,10 @@ impl FrameResampler {
         while self.input_buffer.len() >= self.chunk_size {
             let chunk: Vec<f32> = self.input_buffer.drain(..self.chunk_size).collect();
             // Wrap chunk in AudioAdapter (1 channel, chunk_size frames)
-            if let Ok(adapter) = InterleavedSlice::new(&chunk, 1, chunk.len()) {
-                if let Ok(resampled) = resampler.process(&adapter, 0, None) {
-                    output.extend_from_slice(&resampled.take_data());
-                }
+            if let Ok(adapter) = InterleavedSlice::new(&chunk, 1, chunk.len())
+                && let Ok(resampled) = resampler.process(&adapter, 0, None)
+            {
+                output.extend_from_slice(&resampled.take_data());
             }
         }
 

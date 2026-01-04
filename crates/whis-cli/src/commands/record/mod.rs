@@ -82,27 +82,16 @@ mod modes;
 mod pipeline;
 mod types;
 
+// Re-export public types for external use
+pub use types::{InputSource, RecordConfig};
+
 use anyhow::Result;
 use std::path::PathBuf;
-use std::time::Duration;
 
 use crate::app;
-use types::{InputSource, RecordConfig};
 
 /// Execute the record command with clean pipeline phases
-pub fn run(
-    post_process: bool,
-    preset_name: Option<String>,
-    file_path: Option<PathBuf>,
-    stdin_mode: bool,
-    input_format: &str,
-    print: bool,
-    duration: Option<Duration>,
-    no_vad: bool,
-    save_raw: Option<PathBuf>,
-) -> Result<()> {
-    // Create configuration
-    let config = RecordConfig::new(post_process, preset_name, print, duration, no_vad, save_raw)?;
+pub fn run(config: RecordConfig) -> Result<()> {
     let quiet = config.is_quiet();
 
     // Create Tokio runtime for async operations
@@ -114,20 +103,9 @@ pub fn run(
     // Load transcription configuration
     let transcription_config = app::load_transcription_config()?;
 
-    // Determine input source
-    let input_source = if let Some(path) = file_path {
-        InputSource::File(path)
-    } else if stdin_mode {
-        InputSource::Stdin {
-            format: input_format.to_string(),
-        }
-    } else {
-        InputSource::Microphone
-    };
-
     // Microphone always uses progressive (record + transcribe concurrently)
     // File/stdin use batch (record fully, then transcribe)
-    let use_progressive = matches!(input_source, InputSource::Microphone);
+    let use_progressive = matches!(config.input_source, InputSource::Microphone);
 
     let transcription_result = if use_progressive {
         // Progressive path: Record and transcribe concurrently (overlap recording with transcription)
@@ -145,7 +123,7 @@ pub fn run(
     } else {
         // Batch path: Record first, then transcribe (for pre-recorded audio)
         // Note: Microphone always uses progressive path (see line 119)
-        let record_result = match input_source {
+        let record_result = match config.input_source {
             InputSource::File(path) => {
                 let mode = modes::FileMode::new(path);
                 mode.execute(quiet)?
@@ -160,12 +138,12 @@ pub fn run(
         };
 
         // Save raw samples if requested
-        if let Some(save_path) = &config.save_raw {
-            if let Some((samples, sample_rate)) = &record_result.raw_samples {
-                save_raw_samples_as_wav(samples, *sample_rate, save_path)?;
-                if !quiet {
-                    eprintln!("✓ Saved raw audio to: {}", save_path.display());
-                }
+        if let Some(save_path) = &config.save_raw
+            && let Some((samples, sample_rate)) = &record_result.raw_samples
+        {
+            save_raw_samples_as_wav(samples, *sample_rate, save_path)?;
+            if !quiet {
+                eprintln!("✓ Saved raw audio to: {}", save_path.display());
             }
         }
 
@@ -369,13 +347,13 @@ fn preload_models(config: &modes::MicrophoneConfig) {
     // Preload Ollama if post-processing enabled
     if config.will_post_process {
         let settings = whis_core::Settings::load();
-        if settings.post_processing.processor == whis_core::PostProcessor::Ollama {
-            if let (Some(url), Some(model)) = (
+        if settings.post_processing.processor == whis_core::PostProcessor::Ollama
+            && let (Some(url), Some(model)) = (
                 settings.services.ollama.url(),
                 settings.services.ollama.model(),
-            ) {
-                whis_core::preload_ollama(&url, &model);
-            }
+            )
+        {
+            whis_core::preload_ollama(&url, &model);
         }
     }
 }

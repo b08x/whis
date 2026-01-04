@@ -58,23 +58,12 @@ use std::path::PathBuf;
 /// - `post_processing`: LLM post-processing settings
 /// - `services`: External service configuration (Ollama, etc.)
 /// - `ui`: User interface preferences
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Settings {
     pub transcription: TranscriptionSettings,
     pub post_processing: PostProcessingSettings,
     pub services: ServicesSettings,
     pub ui: UiSettings,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            transcription: TranscriptionSettings::default(),
-            post_processing: PostProcessingSettings::default(),
-            services: ServicesSettings::default(),
-            ui: UiSettings::default(),
-        }
-    }
 }
 
 impl Settings {

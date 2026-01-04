@@ -165,19 +165,19 @@ impl ProgressiveChunker {
     fn should_chunk(&self, vad_state: Option<VadState>) -> bool {
         let duration = self.buffer.duration_secs();
 
-        if let Some(state) = vad_state {
-            if self.config.vad_aware {
-                // VAD-aware: Look for silence near target
-                if duration >= self.config.min_duration_secs && state.is_silence() {
-                    // Found natural pause after minimum duration
-                    return true;
-                }
-                if duration >= self.config.max_duration_secs {
-                    // Force chunk at maximum duration
-                    return true;
-                }
-                return false;
+        if let Some(state) = vad_state
+            && self.config.vad_aware
+        {
+            // VAD-aware: Look for silence near target
+            if duration >= self.config.min_duration_secs && state.is_silence() {
+                // Found natural pause after minimum duration
+                return true;
             }
+            if duration >= self.config.max_duration_secs {
+                // Force chunk at maximum duration
+                return true;
+            }
+            return false;
         }
 
         // Fixed duration: Chunk at target

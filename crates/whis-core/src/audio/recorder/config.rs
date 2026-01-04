@@ -3,22 +3,13 @@
 use super::super::vad::VadConfig;
 
 /// Configuration for the audio recorder.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct RecorderConfig {
     /// Device name to use (None = system default)
     pub device_name: Option<String>,
 
     /// Voice Activity Detection configuration (no-op when vad feature disabled)
     pub vad: VadConfig,
-}
-
-impl Default for RecorderConfig {
-    fn default() -> Self {
-        Self {
-            device_name: None,
-            vad: VadConfig::default(),
-        }
-    }
 }
 
 impl RecorderConfig {
