@@ -7,8 +7,8 @@ import { computed, onUnmounted, ref } from 'vue'
 import { settingsStore } from '../../stores/settings'
 import AppSelect from '../AppSelect.vue'
 
-const ollamaUrl = computed(() => settingsStore.state.ollama_url)
-const ollamaModel = computed(() => settingsStore.state.ollama_model)
+const ollamaUrl = computed(() => settingsStore.state.services.ollama.url)
+const ollamaModel = computed(() => settingsStore.state.services.ollama.model)
 
 // Platform detection using navigator
 function detectPlatform(): 'linux' | 'macos' | 'windows' | 'unknown' {

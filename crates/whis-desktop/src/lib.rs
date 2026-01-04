@@ -4,7 +4,7 @@ mod state;
 pub mod tray;
 mod window;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use whis_core::Settings;
 
 pub fn run(start_in_tray: bool) {
@@ -52,6 +52,17 @@ if !args.contains(&"--start-in-tray".to_string()) {
 
             Ok(())
         })
+        .on_window_event(|window, event| {
+            use tauri::WindowEvent;
+            match event {
+                WindowEvent::CloseRequested { api, .. } => {
+                    // Prevent immediate close - emit event to frontend for graceful shutdown
+                    api.prevent_close();
+                    let _ = window.emit("window-close-requested", ());
+                }
+                _ => {}
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::get_status,
             commands::is_api_configured,
@@ -83,6 +94,7 @@ if !args.contains(&"--start-in-tray".to_string()) {
             commands::get_parakeet_models,
             commands::is_parakeet_model_valid,
             commands::download_parakeet_model,
+            commands::get_active_download,
             commands::list_presets,
             commands::apply_preset,
             commands::get_active_preset,
@@ -92,6 +104,7 @@ if !args.contains(&"--start-in-tray".to_string()) {
             commands::update_preset,
             commands::delete_preset,
             commands::list_audio_devices,
+            commands::exit_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

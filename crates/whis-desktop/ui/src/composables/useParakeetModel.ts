@@ -13,15 +13,17 @@ export function useParakeetModel() {
   const parakeetModelValid = ref(false)
   const availableModels = ref<ParakeetModelInfo[]>([])
   const selectedModel = ref('parakeet-v3')
-  const downloadingModel = ref(false)
   const downloadStatus = ref('')
-  const downloadProgress = ref<{ downloaded: number, total: number } | null>(null)
 
   let downloadUnlisten: UnlistenFn | null = null
 
   // Computed properties from store
-  const provider = computed(() => settingsStore.state.provider)
-  const parakeetModelPath = computed(() => settingsStore.state.parakeet_model_path)
+  const provider = computed(() => settingsStore.state.transcription.provider)
+  const parakeetModelPath = computed(() => settingsStore.state.transcription.local_models.parakeet_path)
+
+  // Download state from global store (persists across navigation)
+  const downloadingModel = computed(() => settingsStore.state.parakeetDownload.active)
+  const downloadProgress = computed(() => settingsStore.state.parakeetDownload.progress)
 
   // Check if parakeet model directory exists on disk
   async function checkParakeetModel() {
@@ -52,30 +54,41 @@ export function useParakeetModel() {
 
   // Download the selected model
   async function downloadModel() {
-    downloadingModel.value = true
-    downloadProgress.value = null
+    // Prevent duplicate downloads
+    if (downloadingModel.value) {
+      return
+    }
+
+    settingsStore.startParakeetDownload(selectedModel.value)
     downloadStatus.value = ''
+
+    // Clean up existing listener before registering new one
+    if (downloadUnlisten) {
+      downloadUnlisten()
+      downloadUnlisten = null
+    }
 
     try {
       // Listen for progress events
       downloadUnlisten = await listen<{ downloaded: number, total: number }>('download-progress', (event) => {
-        downloadProgress.value = event.payload
+        settingsStore.updateParakeetDownloadProgress(event.payload.downloaded, event.payload.total)
       })
 
       const path = await invoke<string>('download_parakeet_model', { modelName: selectedModel.value })
       settingsStore.setParakeetModelPath(path)
       parakeetModelValid.value = true
       downloadStatus.value = 'Model downloaded successfully!'
-      // Refresh model list to update installed status
+      // Refresh model list BEFORE clearing download state
+      // This ensures isParakeetInstalled becomes true before downloadingParakeet becomes false
       await loadParakeetModels()
+      settingsStore.completeParakeetDownload()
       setTimeout(() => downloadStatus.value = '', 3000)
     }
     catch (e) {
+      settingsStore.failParakeetDownload(String(e))
       downloadStatus.value = `Download failed: ${e}`
     }
     finally {
-      downloadingModel.value = false
-      downloadProgress.value = null
       if (downloadUnlisten) {
         downloadUnlisten()
         downloadUnlisten = null
@@ -110,9 +123,16 @@ export function useParakeetModel() {
   })
 
   // Setup watchers and lifecycle
-  onMounted(() => {
+  onMounted(async () => {
     checkParakeetModel()
     loadParakeetModels()
+
+    // Resume monitoring if download is active (e.g., after navigation)
+    if (downloadingModel.value) {
+      downloadUnlisten = await listen<{ downloaded: number, total: number }>('download-progress', (event) => {
+        settingsStore.updateParakeetDownloadProgress(event.payload.downloaded, event.payload.total)
+      })
+    }
   })
 
   watch(provider, checkParakeetModel)

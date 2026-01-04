@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
@@ -42,6 +43,9 @@ async function minimizeWindow() {
 
 async function closeWindow() {
   try {
+    // Flush pending settings before closing to prevent race condition with debounced auto-save
+    await settingsStore.flush()
+
     const canReopen = await invoke<boolean>('can_reopen_window')
     if (canReopen) {
       await getCurrentWindow().hide()
@@ -58,6 +62,18 @@ async function closeWindow() {
 onMounted(async () => {
   showCustomControls.value = true
   await settingsStore.initialize()
+
+  // Listen for tray quit event - flush settings before exit
+  await listen('tray-quit-requested', async () => {
+    await settingsStore.flush()
+    await invoke('exit_app')
+  })
+
+  // Listen for window close event (Alt+F4, system close, etc.)
+  await listen('window-close-requested', async () => {
+    await settingsStore.flush()
+    await getCurrentWindow().close()
+  })
 })
 </script>
 

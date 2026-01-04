@@ -21,15 +21,17 @@ export function useWhisperModel() {
   const whisperModelValid = ref(false)
   const availableModels = ref<WhisperModelInfo[]>([])
   const selectedModel = ref('small')
-  const downloadingModel = ref(false)
   const downloadStatus = ref('')
-  const downloadProgress = ref<{ downloaded: number, total: number } | null>(null)
 
   let downloadUnlisten: UnlistenFn | null = null
 
   // Computed properties from store
-  const provider = computed(() => settingsStore.state.provider)
-  const whisperModelPath = computed(() => settingsStore.state.whisper_model_path)
+  const provider = computed(() => settingsStore.state.transcription.provider)
+  const whisperModelPath = computed(() => settingsStore.state.transcription.local_models.whisper_path)
+
+  // Download state from global store (persists across navigation)
+  const downloadingModel = computed(() => settingsStore.state.whisperDownload.active)
+  const downloadProgress = computed(() => settingsStore.state.whisperDownload.progress)
 
   // Check if whisper model file exists on disk
   async function checkWhisperModel() {
@@ -60,30 +62,41 @@ export function useWhisperModel() {
 
   // Download the selected model
   async function downloadModel() {
-    downloadingModel.value = true
-    downloadProgress.value = null
+    // Prevent duplicate downloads
+    if (downloadingModel.value) {
+      return
+    }
+
+    settingsStore.startWhisperDownload(selectedModel.value)
     downloadStatus.value = ''
+
+    // Clean up existing listener before registering new one
+    if (downloadUnlisten) {
+      downloadUnlisten()
+      downloadUnlisten = null
+    }
 
     try {
       // Listen for progress events
       downloadUnlisten = await listen<{ downloaded: number, total: number }>('download-progress', (event) => {
-        downloadProgress.value = event.payload
+        settingsStore.updateWhisperDownloadProgress(event.payload.downloaded, event.payload.total)
       })
 
       const path = await invoke<string>('download_whisper_model', { modelName: selectedModel.value })
       settingsStore.setWhisperModelPath(path)
       whisperModelValid.value = true
       downloadStatus.value = 'Model downloaded successfully!'
-      // Refresh model list to update installed status
+      // Refresh model list BEFORE clearing download state
+      // This ensures isWhisperInstalled becomes true before downloadingWhisper becomes false
       await loadWhisperModels()
+      settingsStore.completeWhisperDownload()
       setTimeout(() => downloadStatus.value = '', 3000)
     }
     catch (e) {
+      settingsStore.failWhisperDownload(String(e))
       downloadStatus.value = `Download failed: ${e}`
     }
     finally {
-      downloadingModel.value = false
-      downloadProgress.value = null
       if (downloadUnlisten) {
         downloadUnlisten()
         downloadUnlisten = null
@@ -118,9 +131,16 @@ export function useWhisperModel() {
   })
 
   // Setup watchers and lifecycle
-  onMounted(() => {
+  onMounted(async () => {
     checkWhisperModel()
     loadWhisperModels()
+
+    // Resume monitoring if download is active (e.g., after navigation)
+    if (downloadingModel.value) {
+      downloadUnlisten = await listen<{ downloaded: number, total: number }>('download-progress', (event) => {
+        settingsStore.updateWhisperDownloadProgress(event.payload.downloaded, event.payload.total)
+      })
+    }
   })
 
   watch(provider, checkWhisperModel)

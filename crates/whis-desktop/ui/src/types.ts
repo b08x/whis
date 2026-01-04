@@ -22,20 +22,38 @@ export type TranscriptionMethod = 'standard' | 'streaming'
 // Text post-processing providers
 export type PostProcessor = 'none' | 'openai' | 'mistral' | 'ollama'
 
-// All settings from the backend
+// All settings from the backend (nested structure)
 export interface Settings {
-  shortcut: string
-  provider: Provider
-  language: string | null
-  api_keys: Record<string, string>
-  whisper_model_path: string | null
-  parakeet_model_path: string | null
-  post_processor: PostProcessor
-  ollama_url: string | null
-  ollama_model: string | null
-  post_processing_prompt: string | null
-  active_preset: string | null
-  microphone_device: string | null
+  transcription: {
+    provider: Provider
+    language: string | null
+    api_keys: Record<string, string>
+    local_models: {
+      whisper_path: string | null
+      parakeet_path: string | null
+      parakeet_progressive_workers: number
+    }
+  }
+  post_processing: {
+    processor: PostProcessor
+    prompt: string | null
+  }
+  services: {
+    ollama: {
+      url: string | null
+      model: string | null
+    }
+  }
+  ui: {
+    shortcut: string
+    clipboard_method: string
+    microphone_device: string | null
+    vad: {
+      enabled: boolean
+      threshold: number
+    }
+    active_preset: string | null
+  }
 }
 
 // Shortcut backend information

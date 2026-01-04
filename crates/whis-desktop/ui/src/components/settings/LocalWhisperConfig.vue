@@ -42,8 +42,8 @@ const {
   downloadModel: downloadParakeetModel,
 } = useParakeetModel()
 
-const whisperModelPath = settingsStore.state.whisper_model_path
-const parakeetModelPath = settingsStore.state.parakeet_model_path
+const whisperModelPath = settingsStore.state.transcription.local_models.whisper_path
+const parakeetModelPath = settingsStore.state.transcription.local_models.parakeet_path
 
 // Local engine options
 const localEngineOptions: SelectOption[] = [

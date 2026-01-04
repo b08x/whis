@@ -10,8 +10,8 @@ import ToggleSwitch from './ToggleSwitch.vue'
 
 const router = useRouter()
 
-const postProcessor = computed(() => settingsStore.state.post_processor)
-const activePreset = computed(() => settingsStore.state.active_preset)
+const postProcessor = computed(() => settingsStore.state.post_processing.processor)
+const activePreset = computed(() => settingsStore.state.ui.active_preset)
 
 // Preset list for inline dropdown
 const presets = ref<string[]>([])
@@ -54,7 +54,7 @@ async function loadPresets() {
 
 // Get default post-processor based on transcription provider
 function getDefaultPostProcessor(): PostProcessor {
-  const provider = settingsStore.state.provider
+  const provider = settingsStore.state.transcription.provider
   if (provider === 'openai')
     return 'openai'
   if (provider === 'mistral')
@@ -80,7 +80,7 @@ function handlePostProcessorChange(value: string | null) {
 }
 
 function handlePresetChange(value: string | null) {
-  settingsStore.mutableState.active_preset = value
+  settingsStore.mutableState.ui.active_preset = value
 }
 
 function goToPresets() {

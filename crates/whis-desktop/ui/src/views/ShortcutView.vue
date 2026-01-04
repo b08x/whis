@@ -8,12 +8,16 @@ const isRecording = ref(false)
 const status = ref('')
 const needsRestart = ref(false)
 const toggleCommand = ref('whis-desktop --toggle')
-const localShortcut = ref(settingsStore.state.shortcut)
+const localShortcut = ref(settingsStore.state.ui.shortcut)
 
 // Computed properties from store
-const backendInfo = computed(() => settingsStore.state.backendInfo)
-const portalShortcut = computed(() => settingsStore.state.portalShortcut)
-const portalBindError = computed(() => settingsStore.state.portalBindError)
+const backendInfo = computed(() => settingsStore.state.backendInfo ?? null)
+const portalShortcut = computed(() =>
+  backendInfo.value?.backend === 'PortalGlobalShortcuts' ? settingsStore.state.portalShortcut : null,
+)
+const portalBindError = computed(() =>
+  backendInfo.value?.backend === 'PortalGlobalShortcuts' ? settingsStore.state.portalBindError : null,
+)
 const currentShortcut = computed(() => localShortcut.value)
 
 // Platform detection for macOS-friendly key display
@@ -31,7 +35,7 @@ function displayKey(key: string): string {
 }
 
 onMounted(async () => {
-  localShortcut.value = settingsStore.state.shortcut
+  localShortcut.value = settingsStore.state.ui.shortcut
   try {
     toggleCommand.value = await invoke<string>('get_toggle_command')
   }
@@ -178,7 +182,15 @@ function stopRecording() {
       <p>Toggle recording from anywhere</p>
     </header>
 
-    <div class="section-content">
+    <div v-if="!settingsStore.state.loaded" class="section-content">
+      <div class="loading-container">
+        <div class="loading-message">
+          Loading shortcut settings...
+        </div>
+      </div>
+    </div>
+
+    <div v-else class="section-content">
       <!-- Portal backend (Wayland) -->
       <template v-if="backendInfo?.backend === 'PortalGlobalShortcuts'">
         <!-- Warning if binding failed (e.g., launched from terminal) -->
@@ -595,5 +607,18 @@ function stopRecording() {
   font-family: var(--font);
   font-size: 11px;
   color: var(--accent);
+}
+
+/* Loading state */
+.loading-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 400px;
+}
+
+.loading-message {
+  color: var(--text-weak);
+  font-size: 14px;
 }
 </style>

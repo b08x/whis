@@ -41,7 +41,11 @@ const buttonText = computed(() => {
 
 // Configuration summary for status display (compact single line)
 const configSummary = computed(() => {
-  const { provider, language, post_processor, active_preset } = settingsStore.state
+  const { transcription, post_processing, ui } = settingsStore.state
+  const provider = transcription.provider
+  const language = transcription.language
+  const postProcessor = post_processing.processor
+  const activePreset = ui.active_preset
 
   // Mode + Provider
   let mode = 'Cloud'
@@ -64,8 +68,8 @@ const configSummary = computed(() => {
 
   // Post-processing status: show preset name if active, "Post-processing" if enabled but no preset, omit if off
   let postProcessStatus: string | null = null
-  if (post_processor !== 'none') {
-    postProcessStatus = active_preset || 'Post-processing'
+  if (postProcessor !== 'none') {
+    postProcessStatus = activePreset || 'Post-processing'
   }
 
   return { mode, provider: providerName, lang, postProcessStatus }
@@ -79,7 +83,7 @@ const canRecord = computed(() => {
 
 // Check configuration readiness (proactive check for better UX)
 async function checkConfigReadiness() {
-  const { provider, post_processor, api_keys, whisper_model_path, parakeet_model_path, ollama_url } = settingsStore.state
+  const { transcription, post_processing, services } = settingsStore.state
 
   configReadiness.value.checking = true
   try {
@@ -89,12 +93,12 @@ async function checkConfigReadiness() {
       post_processing_ready: boolean
       post_processing_error: string | null
     }>('check_config_readiness', {
-      provider,
-      postProcessor: post_processor,
-      apiKeys: api_keys,
-      whisperModelPath: whisper_model_path,
-      parakeetModelPath: parakeet_model_path,
-      ollamaUrl: ollama_url,
+      provider: transcription.provider,
+      postProcessor: post_processing.processor,
+      apiKeys: transcription.api_keys,
+      whisperModelPath: transcription.local_models.whisper_path,
+      parakeetModelPath: transcription.local_models.parakeet_path,
+      ollamaUrl: services.ollama.url,
     })
     configReadiness.value = {
       transcriptionReady: result.transcription_ready,
@@ -113,15 +117,25 @@ async function checkConfigReadiness() {
 // Watch for settings changes to re-check readiness
 watch(
   () => [
-    settingsStore.state.provider,
-    settingsStore.state.post_processor,
-    settingsStore.state.api_keys,
-    settingsStore.state.whisper_model_path,
-    settingsStore.state.parakeet_model_path,
-    settingsStore.state.ollama_url,
+    settingsStore.state.transcription.provider,
+    settingsStore.state.transcription.api_keys,
+    settingsStore.state.transcription.local_models.whisper_path,
+    settingsStore.state.transcription.local_models.parakeet_path,
+    settingsStore.state.post_processing.processor,
+    settingsStore.state.services.ollama.url,
   ],
   () => checkConfigReadiness(),
   { deep: true },
+)
+
+// Re-check readiness when settings finish loading
+watch(
+  () => settingsStore.state.loaded,
+  (loaded) => {
+    if (loaded)
+      checkConfigReadiness()
+  },
+  { immediate: false },
 )
 
 // Platform detection for macOS-friendly key display
@@ -140,7 +154,7 @@ function displayKey(key: string): string {
 
 const displayShortcut = computed(() => {
   const portalShortcut = settingsStore.state.portalShortcut
-  const currentShortcut = settingsStore.state.shortcut
+  const currentShortcut = settingsStore.state.ui.shortcut
 
   if (portalShortcut) {
     let shortcut = portalShortcut
@@ -190,6 +204,8 @@ async function toggleRecording() {
 
 onMounted(async () => {
   fetchStatus()
+  // Wait for settings to fully load before checking config
+  await settingsStore.waitForLoaded()
   checkConfigReadiness()
   pollInterval = window.setInterval(fetchStatus, 500)
 
@@ -287,7 +303,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Post-processing not ready (non-blocking warning) -->
-      <div v-else-if="!configReadiness.postProcessingReady && settingsStore.state.post_processor !== 'none' && status.config_valid" class="config-notice warning">
+      <div v-else-if="!configReadiness.postProcessingReady && settingsStore.state.post_processing.processor !== 'none' && status.config_valid" class="config-notice warning">
         <span class="notice-marker">[!]</span>
         <div>
           <p>Post-processing unavailable: {{ configReadiness.postProcessingError }}</p>

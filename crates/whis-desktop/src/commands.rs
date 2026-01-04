@@ -1,7 +1,24 @@
 use crate::shortcuts::ShortcutBackendInfo;
 use crate::state::AppState;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use whis_core::{RecordingState, Settings};
+use whis_core::model::{ModelType, WhisperModel};
+use std::sync::{Mutex, OnceLock};
+
+#[cfg(feature = "local-transcription")]
+use whis_core::model::ParakeetModel;
+
+// Global locks for preventing concurrent model downloads
+static WHISPER_DOWNLOAD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+static PARAKEET_DOWNLOAD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn get_whisper_lock() -> &'static Mutex<()> {
+    WHISPER_DOWNLOAD_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn get_parakeet_lock() -> &'static Mutex<()> {
+    PARAKEET_DOWNLOAD_LOCK.get_or_init(|| Mutex::new(()))
+}
 
 #[derive(serde::Serialize)]
 pub struct StatusResponse {
@@ -17,7 +34,7 @@ pub struct SaveSettingsResponse {
 #[tauri::command]
 pub async fn is_api_configured(state: State<'_, AppState>) -> Result<bool, String> {
     let settings = state.settings.lock().unwrap();
-    Ok(settings.has_api_key())
+    Ok(settings.transcription.has_api_key())
 }
 
 #[tauri::command]
@@ -28,7 +45,7 @@ pub async fn get_status(state: State<'_, AppState>) -> Result<StatusResponse, St
     let config_valid = {
         let has_cached_config = state.transcription_config.lock().unwrap().is_some();
         let settings = state.settings.lock().unwrap();
-        has_cached_config || settings.is_provider_configured()
+        has_cached_config || settings.transcription.is_configured()
     };
 
     Ok(StatusResponse {
@@ -49,9 +66,8 @@ pub async fn toggle_recording(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
-    let mut settings = state.settings.lock().unwrap();
-    // Refresh from disk to ensure latest
-    *settings = Settings::load();
+    let settings = state.settings.lock().unwrap();
+    // Return cached state - settings are saved via save_settings() command
     Ok(settings.clone())
 }
 
@@ -101,12 +117,12 @@ pub async fn save_settings(
     let (config_changed, shortcut_changed) = {
         let current = state.settings.lock().unwrap();
         (
-            current.provider != settings.provider
-                || current.api_keys != settings.api_keys
-                || current.language != settings.language
-                || current.whisper_model_path != settings.whisper_model_path
-                || current.parakeet_model_path != settings.parakeet_model_path,
-            current.shortcut != settings.shortcut,
+            current.transcription.provider != settings.transcription.provider
+                || current.transcription.api_keys != settings.transcription.api_keys
+                || current.transcription.language != settings.transcription.language
+                || current.transcription.local_models.whisper_path != settings.transcription.local_models.whisper_path
+                || current.transcription.local_models.parakeet_path != settings.transcription.local_models.parakeet_path,
+            current.ui.shortcut != settings.ui.shortcut,
         )
     };
 
@@ -123,7 +139,7 @@ pub async fn save_settings(
 
     // Only update shortcut if it actually changed
     let needs_restart = if shortcut_changed {
-        crate::shortcuts::update_shortcut(&app, &settings.shortcut).map_err(|e| e.to_string())?
+        crate::shortcuts::update_shortcut(&app, &settings.ui.shortcut).map_err(|e| e.to_string())?
     } else {
         false
     };
@@ -273,24 +289,53 @@ pub struct DownloadProgress {
 /// Emits 'download-progress' events with { downloaded, total } during download
 /// Returns the path where the model was saved
 #[tauri::command]
-pub async fn download_whisper_model(app: AppHandle, model_name: String) -> Result<String, String> {
+pub async fn download_whisper_model(
+    app: AppHandle,
+    model_name: String
+) -> Result<String, String> {
     use tauri::Emitter;
 
     // Run blocking download in a separate thread
     tauri::async_runtime::spawn_blocking(move || {
-        let path = whis_core::model::default_model_path(&model_name);
+        // Try to acquire lock (non-blocking) to prevent concurrent downloads
+        // Lock must be acquired inside spawn_blocking to avoid Send issues
+        let _guard = get_whisper_lock().try_lock()
+            .map_err(|_| "Download already in progress".to_string())?;
+
+        // Get state from app handle (works inside spawn_blocking)
+        let state = app.state::<AppState>();
+
+        // Set download state in backend (survives window close/reopen)
+        *state.active_download.lock().unwrap() = Some(crate::state::DownloadState {
+            model_name: model_name.clone(),
+            model_type: "whisper".to_string(),
+            downloaded: 0,
+            total: 0,
+        });
+
+        let path = WhisperModel.default_path(&model_name);
 
         // Skip download if model already exists
         if path.exists() {
+            // Clear download state
+            *state.active_download.lock().unwrap() = None;
             return Ok(path.to_string_lossy().to_string());
         }
 
         // Download with progress callback
-        whis_core::model::download_model_with_progress(&model_name, &path, |downloaded, total| {
+        let result = whis_core::model::download::download_with_progress(&WhisperModel, &model_name, &path, |downloaded, total| {
+            // Update progress in backend state
+            if let Some(ref mut dl) = *state.active_download.lock().unwrap() {
+                dl.downloaded = downloaded;
+                dl.total = total;
+            }
             let _ = app.emit("download-progress", DownloadProgress { downloaded, total });
-        })
-        .map_err(|e| e.to_string())?;
+        });
 
+        // Clear download state on completion (success or failure)
+        *state.active_download.lock().unwrap() = None;
+
+        result.map_err(|e| e.to_string())?;
         Ok(path.to_string_lossy().to_string())
     })
     .await
@@ -302,7 +347,7 @@ pub async fn download_whisper_model(app: AppHandle, model_name: String) -> Resul
 pub fn is_whisper_model_valid(state: State<'_, AppState>) -> bool {
     let settings = state.settings.lock().unwrap();
     settings
-        .get_whisper_model_path()
+        .transcription.whisper_model_path()
         .map(|p| std::path::Path::new(&p).exists())
         .unwrap_or(false)
 }
@@ -310,13 +355,13 @@ pub fn is_whisper_model_valid(state: State<'_, AppState>) -> bool {
 /// Get available whisper models for download
 #[tauri::command]
 pub fn get_whisper_models() -> Vec<WhisperModelInfo> {
-    whis_core::model::WHISPER_MODELS
+    WhisperModel.models()
         .iter()
-        .map(|(name, _, desc)| {
-            let path = whis_core::model::default_model_path(name);
+        .map(|model| {
+            let path = WhisperModel.default_path(model.name);
             WhisperModelInfo {
-                name: name.to_string(),
-                description: desc.to_string(),
+                name: model.name.to_string(),
+                description: model.description.to_string(),
                 installed: path.exists(),
                 path: path.to_string_lossy().to_string(),
             }
@@ -345,15 +390,15 @@ pub struct ParakeetModelInfo {
 /// Get available Parakeet models for download
 #[tauri::command]
 pub fn get_parakeet_models() -> Vec<ParakeetModelInfo> {
-    whis_core::model::PARAKEET_MODELS
+    ParakeetModel.models()
         .iter()
-        .map(|(name, _, desc, size)| {
-            let path = whis_core::model::default_parakeet_model_path(name);
+        .map(|model| {
+            let path = ParakeetModel.default_path(model.name);
             ParakeetModelInfo {
-                name: name.to_string(),
-                description: desc.to_string(),
-                size: format!("~{} MB", size),
-                installed: whis_core::model::parakeet_model_exists(&path),
+                name: model.name.to_string(),
+                description: model.description.to_string(),
+                size: format!("~{} MB", model.size_mb.unwrap_or(0)),
+                installed: ParakeetModel.verify(&path),
                 path: path.to_string_lossy().to_string(),
             }
         })
@@ -367,34 +412,83 @@ pub fn is_parakeet_model_valid(state: State<'_, AppState>) -> bool {
         .settings
         .lock()
         .unwrap()
-        .get_parakeet_model_path()
-        .map(|p| whis_core::model::parakeet_model_exists(std::path::Path::new(&p)))
+        .transcription.parakeet_model_path()
+        .map(|p| ParakeetModel.verify(std::path::Path::new(&p)))
         .unwrap_or(false)
+}
+
+/// Get current active download state (if any)
+/// Used to restore download progress after window close/reopen
+#[derive(serde::Serialize)]
+pub struct ActiveDownloadInfo {
+    pub model_name: String,
+    pub model_type: String,
+    pub downloaded: u64,
+    pub total: u64,
+}
+
+#[tauri::command]
+pub fn get_active_download(state: State<'_, AppState>) -> Option<ActiveDownloadInfo> {
+    state.active_download.lock().unwrap().as_ref().map(|dl| ActiveDownloadInfo {
+        model_name: dl.model_name.clone(),
+        model_type: dl.model_type.clone(),
+        downloaded: dl.downloaded,
+        total: dl.total,
+    })
 }
 
 /// Download a Parakeet model with progress events
 #[tauri::command]
-pub async fn download_parakeet_model(app: AppHandle, model_name: String) -> Result<String, String> {
+pub async fn download_parakeet_model(
+    app: AppHandle,
+    model_name: String
+) -> Result<String, String> {
     use tauri::Emitter;
 
     tauri::async_runtime::spawn_blocking(move || {
-        let dest = whis_core::model::default_parakeet_model_path(&model_name);
+        // Try to acquire lock (non-blocking) to prevent concurrent downloads
+        // Lock must be acquired inside spawn_blocking to avoid Send issues
+        let _guard = get_parakeet_lock().try_lock()
+            .map_err(|_| "Download already in progress".to_string())?;
+
+        // Get state from app handle (works inside spawn_blocking)
+        let state = app.state::<AppState>();
+
+        // Set download state in backend (survives window close/reopen)
+        *state.active_download.lock().unwrap() = Some(crate::state::DownloadState {
+            model_name: model_name.clone(),
+            model_type: "parakeet".to_string(),
+            downloaded: 0,
+            total: 0,
+        });
+
+        let dest = ParakeetModel.default_path(&model_name);
 
         // Skip if already exists
-        if whis_core::model::parakeet_model_exists(&dest) {
+        if ParakeetModel.verify(&dest) {
+            // Clear download state
+            *state.active_download.lock().unwrap() = None;
             return Ok(dest.to_string_lossy().to_string());
         }
 
         // Download with progress
-        whis_core::model::download_parakeet_model_with_progress(
+        let result = whis_core::model::download::download_with_progress(&ParakeetModel,
             &model_name,
             &dest,
             |downloaded, total| {
+                // Update progress in backend state
+                if let Some(ref mut dl) = *state.active_download.lock().unwrap() {
+                    dl.downloaded = downloaded;
+                    dl.total = total;
+                }
                 let _ = app.emit("download-progress", DownloadProgress { downloaded, total });
             },
-        )
-        .map_err(|e| e.to_string())?;
+        );
 
+        // Clear download state on completion (success or failure)
+        *state.active_download.lock().unwrap() = None;
+
+        result.map_err(|e| e.to_string())?;
         Ok(dest.to_string_lossy().to_string())
     })
     .await
@@ -435,17 +529,17 @@ pub async fn apply_preset(name: String, state: State<'_, AppState>) -> Result<()
         let mut settings = state.settings.lock().unwrap();
 
         // Apply preset's post-processing prompt
-        settings.post_processing_prompt = Some(preset.prompt.clone());
+        settings.post_processing.prompt = Some(preset.prompt.clone());
 
         // Apply preset's post-processor override if specified
         if let Some(post_processor_str) = &preset.post_processor
             && let Ok(post_processor) = post_processor_str.parse()
         {
-            settings.post_processor = post_processor;
+            settings.post_processing.processor = post_processor;
         }
 
         // Set this preset as active
-        settings.active_preset = Some(name);
+        settings.ui.active_preset = Some(name);
 
         // Save the settings
         settings.save().map_err(|e| e.to_string())?;
@@ -461,7 +555,7 @@ pub async fn apply_preset(name: String, state: State<'_, AppState>) -> Result<()
 #[tauri::command]
 pub fn get_active_preset(state: State<'_, AppState>) -> Option<String> {
     let settings = state.settings.lock().unwrap();
-    settings.active_preset.clone()
+    settings.ui.active_preset.clone()
 }
 
 /// Set the active preset
@@ -471,7 +565,7 @@ pub async fn set_active_preset(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let mut settings = state.settings.lock().unwrap();
-    settings.active_preset = name;
+    settings.ui.active_preset = name;
     settings.save().map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -594,8 +688,8 @@ pub fn delete_preset(name: String, state: State<'_, AppState>) -> Result<(), Str
     // If this was the active preset, clear it
     {
         let mut settings = state.settings.lock().unwrap();
-        if settings.active_preset.as_deref() == Some(&name) {
-            settings.active_preset = None;
+        if settings.ui.active_preset.as_deref() == Some(&name) {
+            settings.ui.active_preset = None;
             settings.save().map_err(|e| e.to_string())?;
         }
     }
@@ -813,7 +907,7 @@ pub async fn check_config_readiness(
         },
         "local-parakeet" => match &parakeet_model_path {
             Some(path)
-                if whis_core::model::parakeet_model_exists(std::path::Path::new(path)) =>
+                if ParakeetModel.verify(std::path::Path::new(path)) =>
             {
                 (true, None)
             }
@@ -891,4 +985,11 @@ fn capitalize(s: &str) -> String {
 #[tauri::command]
 pub fn list_audio_devices() -> Result<Vec<whis_core::AudioDeviceInfo>, String> {
     whis_core::list_audio_devices().map_err(|e| e.to_string())
+}
+
+/// Exit the application gracefully
+/// Called after settings have been flushed to disk
+#[tauri::command]
+pub fn exit_app(app: AppHandle) {
+    app.exit(0);
 }

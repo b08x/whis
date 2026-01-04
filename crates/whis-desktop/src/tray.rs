@@ -75,7 +75,8 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 open_settings_window(app.clone());
             }
             "quit" => {
-                app.exit(0);
+                // Emit event to frontend to flush settings before exit
+                let _ = app.emit("tray-quit-requested", ());
             }
             _ => {}
         })
@@ -172,26 +173,26 @@ fn start_recording_sync(app: &AppHandle, state: &AppState) -> Result<(), String>
         let mut config_guard = state.transcription_config.lock().unwrap();
         if config_guard.is_none() {
             let settings = state.settings.lock().unwrap();
-            let provider = settings.provider.clone();
+            let provider = settings.transcription.provider.clone();
 
             // Get API key/model path based on provider type
             let api_key = match provider {
                 TranscriptionProvider::LocalWhisper => {
-                    settings.get_whisper_model_path().ok_or_else(|| {
+                    settings.transcription.whisper_model_path().ok_or_else(|| {
                         "Whisper model path not configured. Add it in Settings.".to_string()
                     })?
                 }
                 TranscriptionProvider::LocalParakeet => {
-                    settings.get_parakeet_model_path().ok_or_else(|| {
+                    settings.transcription.parakeet_model_path().ok_or_else(|| {
                         "Parakeet model not configured. Add it in Settings.".to_string()
                     })?
                 }
-                _ => settings.get_api_key().ok_or_else(|| {
+                _ => settings.transcription.api_key().ok_or_else(|| {
                     format!("No {} API key configured. Add it in Settings.", provider)
                 })?,
             };
 
-            let language = settings.language.clone();
+            let language = settings.transcription.language.clone();
 
             *config_guard = Some(TranscriptionConfig {
                 provider,
@@ -203,7 +204,7 @@ fn start_recording_sync(app: &AppHandle, state: &AppState) -> Result<(), String>
 
     // Start recording with selected microphone device
     let mut recorder = AudioRecorder::new().map_err(|e| e.to_string())?;
-    let device_name = state.settings.lock().unwrap().microphone_device.clone();
+    let device_name = state.settings.lock().unwrap().ui.microphone_device.clone();
     recorder
         .start_recording_with_device(device_name.as_deref())
         .map_err(|e| e.to_string())?;
@@ -215,12 +216,12 @@ fn start_recording_sync(app: &AppHandle, state: &AppState) -> Result<(), String>
     // This overlaps model loading with recording to reduce latency
     {
         let settings = state.settings.lock().unwrap();
-        if settings.post_processor == PostProcessor::Ollama {
+        if settings.post_processing.processor == PostProcessor::Ollama {
             let ollama_url = settings
-                .get_ollama_url()
+                .services.ollama.url()
                 .unwrap_or_else(|| ollama::DEFAULT_OLLAMA_URL.to_string());
             let ollama_model = settings
-                .get_ollama_model()
+                .services.ollama.model()
                 .unwrap_or_else(|| ollama::DEFAULT_OLLAMA_MODEL.to_string());
 
             preload_ollama(&ollama_url, &ollama_model);
@@ -307,21 +308,21 @@ async fn do_transcription(app: &AppHandle, state: &AppState) -> Result<(), Strin
     // Extract post-processing config and clipboard method from settings (lock scope limited)
     let (post_process_config, clipboard_method) = {
         let settings = state.settings.lock().unwrap();
-        let clipboard_method = settings.clipboard_method.clone();
-        let post_process_config = if settings.post_processor != PostProcessor::None {
-            let post_processor = settings.post_processor.clone();
+        let clipboard_method = settings.ui.clipboard_method.clone();
+        let post_process_config = if settings.post_processing.processor != PostProcessor::None {
+            let post_processor = settings.post_processing.processor.clone();
             let prompt = settings
-                .post_processing_prompt
+                .post_processing.prompt
                 .clone()
                 .unwrap_or_else(|| DEFAULT_POST_PROCESSING_PROMPT.to_string());
-            let ollama_model = settings.ollama_model.clone();
+            let ollama_model = settings.services.ollama.model.clone();
 
             // Get API key or URL based on post-processor type
             let api_key_or_url = if post_processor.requires_api_key() {
-                settings.get_post_processor_api_key()
+                settings.post_processing.api_key(&settings.transcription.api_keys)
             } else if post_processor == PostProcessor::Ollama {
                 let ollama_url = settings
-                    .get_ollama_url()
+                    .services.ollama.url()
                     .unwrap_or_else(|| ollama::DEFAULT_OLLAMA_URL.to_string());
                 Some(ollama_url)
             } else {

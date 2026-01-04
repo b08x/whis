@@ -536,7 +536,7 @@ pub fn setup_shortcuts(app: &tauri::App) {
     let capability = detect_backend();
     let state = app.state::<crate::state::AppState>();
     let settings = state.settings.lock().unwrap();
-    let shortcut_str = settings.shortcut.clone();
+    let shortcut_str = settings.ui.shortcut.clone();
     drop(settings);
 
     println!(

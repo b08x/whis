@@ -2,30 +2,61 @@ import type { BackendInfo, PostProcessor, Provider, Settings } from '../types'
 import { invoke } from '@tauri-apps/api/core'
 import { reactive, readonly, watch } from 'vue'
 
-// Simple debounce utility
+// Debounce utility with cancel support
 function debounce<T extends (...args: unknown[]) => unknown>(fn: T, ms: number) {
   let timeoutId: ReturnType<typeof setTimeout> | null = null
-  return (...args: Parameters<T>) => {
+
+  const debounced = (...args: Parameters<T>) => {
     if (timeoutId)
       clearTimeout(timeoutId)
-    timeoutId = setTimeout(() => fn(...args), ms)
+    timeoutId = setTimeout(() => {
+      timeoutId = null
+      fn(...args)
+    }, ms)
   }
+
+  debounced.cancel = () => {
+    if (timeoutId) {
+      clearTimeout(timeoutId)
+      timeoutId = null
+    }
+  }
+
+  return debounced
 }
 
-// Default settings values
+// Default settings values (nested structure matching backend)
 const defaultSettings: Settings = {
-  shortcut: 'Ctrl+Alt+W',
-  provider: 'openai',
-  language: null,
-  api_keys: {},
-  whisper_model_path: null,
-  parakeet_model_path: null,
-  post_processor: 'none',
-  ollama_url: null,
-  ollama_model: null,
-  post_processing_prompt: null,
-  active_preset: null,
-  microphone_device: null,
+  transcription: {
+    provider: 'openai',
+    language: null,
+    api_keys: {},
+    local_models: {
+      whisper_path: null,
+      parakeet_path: null,
+      parakeet_progressive_workers: 1,
+    },
+  },
+  post_processing: {
+    processor: 'none',
+    prompt: null,
+  },
+  services: {
+    ollama: {
+      url: 'http://localhost:11434',
+      model: null,
+    },
+  },
+  ui: {
+    shortcut: 'Ctrl+Alt+W',
+    clipboard_method: 'auto',
+    microphone_device: null,
+    vad: {
+      enabled: false,
+      threshold: 0.5,
+    },
+    active_preset: null,
+  },
 }
 
 // Internal mutable state
@@ -40,6 +71,20 @@ const state = reactive({
 
   // Loading state
   loaded: false,
+
+  // Download state (not persisted to disk)
+  whisperDownload: {
+    active: false,
+    model: null as string | null,
+    progress: null as { downloaded: number, total: number } | null,
+    error: null as string | null,
+  },
+  parakeetDownload: {
+    active: false,
+    model: null as string | null,
+    progress: null as { downloaded: number, total: number } | null,
+    error: null as string | null,
+  },
 })
 
 // Debounced auto-save (500ms delay)
@@ -47,18 +92,10 @@ const debouncedSave = debounce(async () => {
   try {
     await invoke<{ needs_restart: boolean }>('save_settings', {
       settings: {
-        shortcut: state.shortcut,
-        provider: state.provider,
-        language: state.language,
-        api_keys: state.api_keys,
-        whisper_model_path: state.whisper_model_path,
-        parakeet_model_path: state.parakeet_model_path,
-        post_processor: state.post_processor,
-        ollama_url: state.ollama_url,
-        ollama_model: state.ollama_model,
-        post_processing_prompt: state.post_processing_prompt,
-        active_preset: state.active_preset,
-        microphone_device: state.microphone_device,
+        transcription: state.transcription,
+        post_processing: state.post_processing,
+        services: state.services,
+        ui: state.ui,
       },
     })
   }
@@ -70,17 +107,10 @@ const debouncedSave = debounce(async () => {
 // Watch settings and auto-save on change
 watch(
   () => [
-    state.provider,
-    state.language,
-    state.api_keys,
-    state.whisper_model_path,
-    state.parakeet_model_path,
-    state.post_processor,
-    state.ollama_url,
-    state.ollama_model,
-    state.post_processing_prompt,
-    state.active_preset,
-    state.microphone_device,
+    state.transcription,
+    state.post_processing,
+    state.services,
+    state.ui,
   ],
   () => {
     if (state.loaded)
@@ -93,18 +123,37 @@ watch(
 async function load() {
   try {
     const settings = await invoke<Settings>('get_settings')
-    state.shortcut = settings.shortcut
-    state.provider = settings.provider || 'openai'
-    state.language = settings.language
-    state.api_keys = settings.api_keys || {}
-    state.whisper_model_path = settings.whisper_model_path
-    state.parakeet_model_path = settings.parakeet_model_path
-    state.post_processor = settings.post_processor || 'none'
-    state.ollama_url = settings.ollama_url
-    state.ollama_model = settings.ollama_model
-    state.post_processing_prompt = settings.post_processing_prompt
-    state.active_preset = settings.active_preset
-    state.microphone_device = settings.microphone_device
+    // Deep copy nested settings
+    state.transcription = {
+      provider: settings.transcription.provider || 'openai',
+      language: settings.transcription.language,
+      api_keys: settings.transcription.api_keys || {},
+      local_models: {
+        whisper_path: settings.transcription.local_models.whisper_path,
+        parakeet_path: settings.transcription.local_models.parakeet_path,
+        parakeet_progressive_workers: settings.transcription.local_models.parakeet_progressive_workers || 1,
+      },
+    }
+    state.post_processing = {
+      processor: settings.post_processing.processor || 'none',
+      prompt: settings.post_processing.prompt,
+    }
+    state.services = {
+      ollama: {
+        url: settings.services.ollama.url || 'http://localhost:11434',
+        model: settings.services.ollama.model,
+      },
+    }
+    state.ui = {
+      shortcut: settings.ui.shortcut,
+      clipboard_method: settings.ui.clipboard_method,
+      microphone_device: settings.ui.microphone_device,
+      vad: {
+        enabled: settings.ui.vad.enabled,
+        threshold: settings.ui.vad.threshold,
+      },
+      active_preset: settings.ui.active_preset,
+    }
   }
   catch (e) {
     console.error('Failed to load settings:', e)
@@ -115,18 +164,10 @@ async function save(): Promise<boolean> {
   try {
     const result = await invoke<{ needs_restart: boolean }>('save_settings', {
       settings: {
-        shortcut: state.shortcut,
-        provider: state.provider,
-        language: state.language,
-        api_keys: state.api_keys,
-        whisper_model_path: state.whisper_model_path,
-        parakeet_model_path: state.parakeet_model_path,
-        post_processor: state.post_processor,
-        ollama_url: state.ollama_url,
-        ollama_model: state.ollama_model,
-        post_processing_prompt: state.post_processing_prompt,
-        active_preset: state.active_preset,
-        microphone_device: state.microphone_device,
+        transcription: state.transcription,
+        post_processing: state.post_processing,
+        services: state.services,
+        ui: state.ui,
       },
     })
     return result.needs_restart
@@ -155,48 +196,124 @@ async function loadBackendInfo() {
 async function initialize() {
   await loadBackendInfo()
   await load()
+
+  // Query backend for active download state (survives window close/reopen)
+  try {
+    const activeDownload = await invoke<{
+      model_name: string
+      model_type: string
+      downloaded: number
+      total: number
+    } | null>('get_active_download')
+
+    if (activeDownload) {
+      if (activeDownload.model_type === 'whisper') {
+        state.whisperDownload.active = true
+        state.whisperDownload.model = activeDownload.model_name
+        state.whisperDownload.progress = {
+          downloaded: activeDownload.downloaded,
+          total: activeDownload.total,
+        }
+      }
+      else if (activeDownload.model_type === 'parakeet') {
+        state.parakeetDownload.active = true
+        state.parakeetDownload.model = activeDownload.model_name
+        state.parakeetDownload.progress = {
+          downloaded: activeDownload.downloaded,
+          total: activeDownload.total,
+        }
+      }
+    }
+  }
+  catch (e) {
+    // Command not yet implemented or error - ignore
+    console.debug('No active download found:', e)
+  }
+
   state.loaded = true
+}
+
+async function waitForLoaded(): Promise<void> {
+  if (state.loaded)
+    return
+
+  return new Promise((resolve) => {
+    const unwatch = watch(
+      () => state.loaded,
+      (loaded) => {
+        if (loaded) {
+          unwatch()
+          resolve()
+        }
+      },
+      { immediate: true },
+    )
+  })
+}
+
+// Flush pending settings immediately (no debounce delay)
+// Called before window close to ensure settings are persisted
+async function flush(): Promise<void> {
+  if (!state.loaded)
+    return
+
+  // Cancel any pending debounced save to avoid race condition
+  debouncedSave.cancel()
+
+  try {
+    await invoke<{ needs_restart: boolean }>('save_settings', {
+      settings: {
+        transcription: state.transcription,
+        post_processing: state.post_processing,
+        services: state.services,
+        ui: state.ui,
+      },
+    })
+  }
+  catch (e) {
+    console.error('Failed to flush settings:', e)
+  }
 }
 
 // Setters for individual fields (for v-model binding)
 function setProvider(value: Provider) {
-  state.provider = value
+  state.transcription.provider = value
 }
 
 function setLanguage(value: string | null) {
-  state.language = value
+  state.transcription.language = value
 }
 
 function setApiKey(provider: string, key: string) {
-  state.api_keys = { ...state.api_keys, [provider]: key }
+  state.transcription.api_keys = { ...state.transcription.api_keys, [provider]: key }
 }
 
 function setWhisperModelPath(value: string | null) {
-  state.whisper_model_path = value
+  state.transcription.local_models.whisper_path = value
 }
 
 function setParakeetModelPath(value: string | null) {
-  state.parakeet_model_path = value
+  state.transcription.local_models.parakeet_path = value
 }
 
 function setPostProcessor(value: PostProcessor) {
-  state.post_processor = value
+  state.post_processing.processor = value
 }
 
 function setOllamaUrl(value: string | null) {
-  state.ollama_url = value
+  state.services.ollama.url = value
 }
 
 function setOllamaModel(value: string | null) {
-  state.ollama_model = value
+  state.services.ollama.model = value
 }
 
 function setPostProcessingPrompt(value: string | null) {
-  state.post_processing_prompt = value
+  state.post_processing.prompt = value
 }
 
 function setShortcut(value: string) {
-  state.shortcut = value
+  state.ui.shortcut = value
 }
 
 function setPortalShortcut(value: string | null) {
@@ -204,7 +321,57 @@ function setPortalShortcut(value: string | null) {
 }
 
 function setMicrophoneDevice(value: string | null) {
-  state.microphone_device = value
+  state.ui.microphone_device = value
+}
+
+// Download state management - Whisper
+function startWhisperDownload(model: string) {
+  state.whisperDownload.active = true
+  state.whisperDownload.model = model
+  state.whisperDownload.progress = null
+  state.whisperDownload.error = null
+}
+
+function updateWhisperDownloadProgress(downloaded: number, total: number) {
+  if (state.whisperDownload.active) {
+    state.whisperDownload.progress = { downloaded, total }
+  }
+}
+
+function completeWhisperDownload() {
+  state.whisperDownload.active = false
+  state.whisperDownload.progress = null
+  state.whisperDownload.model = null
+}
+
+function failWhisperDownload(error: string) {
+  state.whisperDownload.active = false
+  state.whisperDownload.error = error
+}
+
+// Download state management - Parakeet
+function startParakeetDownload(model: string) {
+  state.parakeetDownload.active = true
+  state.parakeetDownload.model = model
+  state.parakeetDownload.progress = null
+  state.parakeetDownload.error = null
+}
+
+function updateParakeetDownloadProgress(downloaded: number, total: number) {
+  if (state.parakeetDownload.active) {
+    state.parakeetDownload.progress = { downloaded, total }
+  }
+}
+
+function completeParakeetDownload() {
+  state.parakeetDownload.active = false
+  state.parakeetDownload.progress = null
+  state.parakeetDownload.model = null
+}
+
+function failParakeetDownload(error: string) {
+  state.parakeetDownload.active = false
+  state.parakeetDownload.error = error
 }
 
 // Export reactive state and actions
@@ -219,6 +386,8 @@ export const settingsStore = {
   load,
   save,
   initialize,
+  waitForLoaded,
+  flush,
 
   // Setters
   setProvider,
@@ -233,4 +402,14 @@ export const settingsStore = {
   setShortcut,
   setPortalShortcut,
   setMicrophoneDevice,
+
+  // Download state management
+  startWhisperDownload,
+  updateWhisperDownloadProgress,
+  completeWhisperDownload,
+  failWhisperDownload,
+  startParakeetDownload,
+  updateParakeetDownloadProgress,
+  completeParakeetDownload,
+  failParakeetDownload,
 }

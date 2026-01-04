@@ -15,10 +15,10 @@ import { isLocalProvider } from '../types'
 const helpOpen = ref(false)
 
 // Settings from store
-const provider = computed(() => settingsStore.state.provider)
-const language = computed(() => settingsStore.state.language)
-const apiKeys = computed(() => settingsStore.state.api_keys)
-const postProcessor = computed(() => settingsStore.state.post_processor)
+const provider = computed(() => settingsStore.state.transcription.provider)
+const language = computed(() => settingsStore.state.transcription.language)
+const apiKeys = computed(() => settingsStore.state.transcription.api_keys)
+const postProcessor = computed(() => settingsStore.state.post_processing.processor)
 
 // Transcription mode: cloud vs local
 const transcriptionMode = ref<TranscriptionMode>(
@@ -168,7 +168,7 @@ interface AudioDevice {
 }
 
 const audioDevices = ref<AudioDevice[]>([])
-const microphoneDevice = computed(() => settingsStore.state.microphone_device)
+const microphoneDevice = computed(() => settingsStore.state.ui.microphone_device)
 
 // Load available audio devices
 onMounted(async () => {
@@ -266,6 +266,7 @@ function handleMicrophoneChange(value: string | null) {
           <div class="field-row">
             <label>Language</label>
             <AppSelect
+              :key="`language-${settingsStore.state.loaded}`"
               :model-value="language"
               :options="languageOptions"
               @update:model-value="handleLanguageChange"
@@ -276,6 +277,7 @@ function handleMicrophoneChange(value: string | null) {
           <div class="field-row">
             <label>Microphone</label>
             <AppSelect
+              :key="`microphone-${settingsStore.state.loaded}`"
               :model-value="microphoneDevice"
               :options="microphoneOptions"
               @update:model-value="handleMicrophoneChange"
