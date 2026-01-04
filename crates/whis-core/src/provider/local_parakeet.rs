@@ -112,7 +112,7 @@ fn transcribe_samples(model_path: &str, samples: Vec<f32>) -> Result<Transcripti
     // Transcribe each chunk using the same engine instance
     let mut results = Vec::new();
     for (i, chunk) in chunks.iter().enumerate() {
-        eprintln!(
+        crate::verbose!(
             "Transcribing chunk {}/{} ({:.1}s)...",
             i + 1,
             chunks.len(),

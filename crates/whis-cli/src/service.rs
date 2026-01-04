@@ -7,8 +7,8 @@ use crate::app::TranscriptionConfig;
 use crate::ipc::{IpcMessage, IpcResponse, IpcServer};
 use std::time::Duration;
 use whis_core::{
-    AudioRecorder, DEFAULT_POST_PROCESSING_PROMPT, PostProcessor, RecordingOutput, Settings,
-    TranscriptionProvider, batch_transcribe, copy_to_clipboard, post_process, transcribe_audio,
+    AudioRecorder, DEFAULT_POST_PROCESSING_PROMPT, PostProcessor, Settings, TranscriptionProvider,
+    copy_to_clipboard, post_process,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -21,6 +21,9 @@ enum ServiceState {
 pub struct Service {
     state: Arc<Mutex<ServiceState>>,
     recorder: Arc<Mutex<Option<AudioRecorder>>>,
+    // Store handles for background tasks (progressive transcription)
+    chunker_handle: Arc<Mutex<Option<tokio::task::JoinHandle<Result<(), String>>>>>,
+    transcription_handle: Arc<Mutex<Option<tokio::task::JoinHandle<Result<String>>>>>,
     provider: TranscriptionProvider,
     api_key: String,
     language: Option<String>,
@@ -32,6 +35,8 @@ impl Service {
         Ok(Self {
             state: Arc::new(Mutex::new(ServiceState::Idle)),
             recorder: Arc::new(Mutex::new(None)),
+            chunker_handle: Arc::new(Mutex::new(None)),
+            transcription_handle: Arc::new(Mutex::new(None)),
             provider: config.provider,
             api_key: config.api_key,
             language: config.language,
@@ -138,7 +143,6 @@ impl Service {
                 match self.stop_and_transcribe(count).await {
                     Ok(_) => {
                         *self.state.lock().unwrap() = ServiceState::Idle;
-                        println!("#{count} done");
                         println!(); // blank line between transcriptions
                         IpcResponse::Success
                     }
@@ -157,33 +161,112 @@ impl Service {
         }
     }
 
-    /// Start recording audio
+    /// Start recording audio with progressive transcription
     async fn start_recording(&self) -> Result<()> {
+        use tokio::sync::mpsc;
+        use whis_core::{ChunkerConfig, ProgressiveChunker};
+
         let mut recorder = AudioRecorder::new()?;
 
         // Configure VAD from settings
+        let settings = Settings::load();
         #[cfg(feature = "vad")]
         {
-            let settings = Settings::load();
             recorder.set_vad(settings.ui.vad.enabled, settings.ui.vad.threshold);
         }
 
-        recorder.start_recording()?;
+        // Start streaming recording (returns bounded channel of audio samples)
+        let mut audio_rx_bounded = recorder.start_recording_streaming()?;
 
-        // Preload whisper model in background while recording
-        // By the time recording finishes, model should be loaded
+        // Create unbounded channel for chunker (adapter pattern)
+        let (audio_tx_unbounded, audio_rx_unbounded) = mpsc::unbounded_channel();
+
+        // Spawn adapter task to forward from bounded to unbounded channel
+        tokio::spawn(async move {
+            while let Some(samples) = audio_rx_bounded.recv().await {
+                if audio_tx_unbounded.send(samples).is_err() {
+                    break; // Receiver dropped
+                }
+            }
+        });
+
+        // Create channels for progressive chunking
+        let (chunk_tx, chunk_rx) = mpsc::unbounded_channel();
+
+        // Create chunker config (90-second chunks like CLI)
+        let vad_enabled = settings.ui.vad.enabled;
+        let chunker_config = ChunkerConfig {
+            target_duration_secs: 90,
+            min_duration_secs: 60,
+            max_duration_secs: 120,
+            vad_aware: vad_enabled,
+        };
+
+        // Spawn chunker task
+        let mut chunker = ProgressiveChunker::new(chunker_config, chunk_tx);
+        let chunker_handle = tokio::spawn(async move {
+            chunker
+                .consume_stream(audio_rx_unbounded, None)
+                .await
+                .map_err(|e| e.to_string())
+        });
+
+        // Spawn transcription task based on provider
+        let provider = self.provider.clone();
+        let api_key = self.api_key.clone();
+        let language = self.language.clone();
+
+        let transcription_handle = tokio::spawn(async move {
+            #[cfg(feature = "local-transcription")]
+            if provider == TranscriptionProvider::LocalParakeet {
+                // Local Parakeet progressive transcription
+                let model_path = Settings::load()
+                    .transcription
+                    .parakeet_model_path()
+                    .ok_or_else(|| anyhow::anyhow!("Parakeet model path not configured"))?;
+
+                return whis_core::progressive_transcribe_local(&model_path, chunk_rx, None).await;
+            }
+
+            // Cloud provider progressive transcription
+            whis_core::progressive_transcribe_cloud(
+                &provider,
+                &api_key,
+                language.as_deref(),
+                chunk_rx,
+                None,
+            )
+            .await
+        });
+
+        // Preload models in background (same as before)
         #[cfg(feature = "local-transcription")]
-        if self.provider == TranscriptionProvider::LocalWhisper {
-            whis_core::whisper_preload_model(&self.api_key);
+        {
+            match self.provider {
+                TranscriptionProvider::LocalWhisper => {
+                    if let Some(model_path) = settings.transcription.whisper_model_path() {
+                        whis_core::whisper_preload_model(&model_path);
+                    }
+                }
+                TranscriptionProvider::LocalParakeet => {
+                    if let Some(model_path) = settings.transcription.parakeet_model_path() {
+                        whis_core::preload_parakeet(&model_path);
+                    }
+                }
+                _ => {} // Cloud providers don't need preload
+            }
         }
 
+        // Store recorder and task handles
         *self.recorder.lock().unwrap() = Some(recorder);
+        *self.chunker_handle.lock().unwrap() = Some(chunker_handle);
+        *self.transcription_handle.lock().unwrap() = Some(transcription_handle);
         *self.state.lock().unwrap() = ServiceState::Recording;
 
         Ok(())
     }
 
-    /// Stop recording and transcribe
+    /// Stop recording and await progressive transcription completion
     async fn stop_and_transcribe(&self, count: u32) -> Result<()> {
         // Get the recorder
         let mut recorder = self
@@ -193,64 +276,34 @@ impl Service {
             .take()
             .context("No active recording")?;
 
-        // Stop recording and get the Send-safe recording data
-        // (cpal::Stream is dropped here, making RecordingData movable across threads)
-        let recording_data = recorder.stop_recording()?;
+        // Stop recording (closes audio stream, signals chunker to finish)
+        recorder.stop_recording()?;
 
-        // Transcribe based on provider type
-        let api_key = self.api_key.clone();
-        let provider = self.provider.clone();
-        let language = self.language.clone();
+        // Get task handles
+        let chunker_handle = self
+            .chunker_handle
+            .lock()
+            .unwrap()
+            .take()
+            .context("No chunker task running")?;
 
-        // For local whisper: use raw samples directly (skip MP3 encoding)
-        // For cloud providers: encode to MP3 for upload
-        #[cfg(feature = "local-transcription")]
-        let transcription = if provider == TranscriptionProvider::LocalWhisper {
-            // Fast path: raw samples -> whisper (no MP3 encode/decode)
-            let samples = recording_data.finalize_raw();
-            let model_path = api_key.clone();
-            tokio::task::spawn_blocking(move || {
-                whis_core::transcribe_raw(&model_path, &samples, language.as_deref())
-                    .map(|r| r.text)
-            })
+        let transcription_handle = self
+            .transcription_handle
+            .lock()
+            .unwrap()
+            .take()
+            .context("No transcription task running")?;
+
+        // Wait for chunker to finish processing all audio
+        chunker_handle
             .await
-            .context("Failed to join task")??
-        } else {
-            // Cloud path: MP3 encoding required
-            let audio_result = tokio::task::spawn_blocking(move || recording_data.finalize())
-                .await
-                .context("Failed to join task")??;
+            .context("Failed to join chunker task")?
+            .map_err(|e| anyhow::anyhow!("Chunker task failed: {}", e))?;
 
-            match audio_result {
-                RecordingOutput::Single(audio_data) => tokio::task::spawn_blocking(move || {
-                    transcribe_audio(&provider, &api_key, language.as_deref(), audio_data)
-                })
-                .await
-                .context("Failed to join task")??,
-                RecordingOutput::Chunked(chunks) => {
-                    batch_transcribe(&provider, &api_key, language.as_deref(), chunks, None).await?
-                }
-            }
-        };
-
-        #[cfg(not(feature = "local-transcription"))]
-        let transcription = {
-            // Finalize recording (blocking operation, run in tokio blocking task)
-            let audio_result = tokio::task::spawn_blocking(move || recording_data.finalize())
-                .await
-                .context("Failed to join task")??;
-
-            match audio_result {
-                RecordingOutput::Single(audio_data) => tokio::task::spawn_blocking(move || {
-                    transcribe_audio(&provider, &api_key, language.as_deref(), audio_data)
-                })
-                .await
-                .context("Failed to join task")??,
-                RecordingOutput::Chunked(chunks) => {
-                    batch_transcribe(&provider, &api_key, language.as_deref(), chunks, None).await?
-                }
-            }
-        };
+        // Wait for transcription to finish
+        let transcription = transcription_handle
+            .await
+            .context("Failed to join transcription task")??;
 
         // Print completion message immediately after transcription finishes
         println!("#{count} Done.");
