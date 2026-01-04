@@ -1,14 +1,10 @@
-use crate::state::{AppState, RecordingState, TranscriptionConfig};
+use crate::recording;
+use crate::state::{AppState, RecordingState};
 use tauri::{
     AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
     image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
-};
-use whis_core::{
-    AudioRecorder, DEFAULT_POST_PROCESSING_PROMPT, PostProcessor, RecordingOutput,
-    TranscriptionProvider, copy_to_clipboard, ollama, parallel_transcribe, post_process,
-    preload_ollama, transcribe_audio,
 };
 
 // Static icons for each state (pre-loaded at compile time)
@@ -141,6 +137,8 @@ fn open_settings_window(app: AppHandle) {
     }
 }
 
+/// Toggle recording with tray UI updates
+/// Wraps the core recording logic and handles tray icon/menu updates
 fn toggle_recording(app: AppHandle) {
     let state = app.state::<AppState>();
     let current_state = *state.state.lock().unwrap();
@@ -148,255 +146,32 @@ fn toggle_recording(app: AppHandle) {
     match current_state {
         RecordingState::Idle => {
             // Start recording
-            if let Err(e) = start_recording_sync(&app, &state) {
+            if let Err(e) = recording::start_recording_sync(&app, &state) {
                 eprintln!("Failed to start recording: {e}");
+            } else {
+                update_tray(&app, RecordingState::Recording);
             }
         }
         RecordingState::Recording => {
             // Stop recording and transcribe
             let app_clone = app.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = stop_and_transcribe(&app_clone).await {
+                // Update tray to transcribing
+                update_tray(&app_clone, RecordingState::Transcribing);
+
+                // Run transcription pipeline
+                if let Err(e) = recording::stop_and_transcribe(&app_clone).await {
                     eprintln!("Failed to transcribe: {e}");
                 }
+
+                // Update tray back to idle
+                update_tray(&app_clone, RecordingState::Idle);
             });
         }
         RecordingState::Transcribing => {
             // Already transcribing, ignore
         }
     }
-}
-
-fn start_recording_sync(app: &AppHandle, state: &AppState) -> Result<(), String> {
-    // Load transcription config if not already loaded
-    {
-        let mut config_guard = state.transcription_config.lock().unwrap();
-        if config_guard.is_none() {
-            let settings = state.settings.lock().unwrap();
-            let provider = settings.transcription.provider.clone();
-
-            // Get API key/model path based on provider type
-            let api_key = match provider {
-                TranscriptionProvider::LocalWhisper => {
-                    settings.transcription.whisper_model_path().ok_or_else(|| {
-                        "Whisper model path not configured. Add it in Settings.".to_string()
-                    })?
-                }
-                TranscriptionProvider::LocalParakeet => {
-                    settings.transcription.parakeet_model_path().ok_or_else(|| {
-                        "Parakeet model not configured. Add it in Settings.".to_string()
-                    })?
-                }
-                _ => settings.transcription.api_key().ok_or_else(|| {
-                    format!("No {} API key configured. Add it in Settings.", provider)
-                })?,
-            };
-
-            let language = settings.transcription.language.clone();
-
-            *config_guard = Some(TranscriptionConfig {
-                provider,
-                api_key,
-                language,
-            });
-        }
-    }
-
-    // Start recording with selected microphone device
-    let mut recorder = AudioRecorder::new().map_err(|e| e.to_string())?;
-    let device_name = state.settings.lock().unwrap().ui.microphone_device.clone();
-    recorder
-        .start_recording_with_device(device_name.as_deref())
-        .map_err(|e| e.to_string())?;
-
-    *state.recorder.lock().unwrap() = Some(recorder);
-    *state.state.lock().unwrap() = RecordingState::Recording;
-
-    // Preload Ollama model in background if using Ollama post-processing
-    // This overlaps model loading with recording to reduce latency
-    {
-        let settings = state.settings.lock().unwrap();
-        if settings.post_processing.processor == PostProcessor::Ollama {
-            let ollama_url = settings
-                .services.ollama.url()
-                .unwrap_or_else(|| ollama::DEFAULT_OLLAMA_URL.to_string());
-            let ollama_model = settings
-                .services.ollama.model()
-                .unwrap_or_else(|| ollama::DEFAULT_OLLAMA_MODEL.to_string());
-
-            preload_ollama(&ollama_url, &ollama_model);
-        }
-    }
-
-    // Update tray
-    update_tray(app, RecordingState::Recording);
-    println!("Recording started...");
-
-    Ok(())
-}
-
-async fn stop_and_transcribe(app: &AppHandle) -> Result<(), String> {
-    let state = app.state::<AppState>();
-
-    // Update state to transcribing
-    {
-        *state.state.lock().unwrap() = RecordingState::Transcribing;
-    }
-    update_tray(app, RecordingState::Transcribing);
-    println!("Transcribing...");
-
-    // Run transcription with guaranteed state cleanup on any error
-    let result = do_transcription(app, &state).await;
-
-    // Always reset state, regardless of success or failure
-    {
-        *state.state.lock().unwrap() = RecordingState::Idle;
-    }
-    update_tray(app, RecordingState::Idle);
-
-    result
-}
-
-/// Inner transcription logic - extracted so we can guarantee state cleanup
-async fn do_transcription(app: &AppHandle, state: &AppState) -> Result<(), String> {
-    // Get recorder and config
-    let mut recorder = state
-        .recorder
-        .lock()
-        .unwrap()
-        .take()
-        .ok_or("No active recording")?;
-
-    let (provider, api_key, language) = {
-        let config = state.transcription_config.lock().unwrap();
-        let config_ref = config.as_ref().ok_or("Transcription config not loaded")?;
-        (
-            config_ref.provider.clone(),
-            config_ref.api_key.clone(),
-            config_ref.language.clone(),
-        )
-    };
-
-    // Finalize recording (synchronous file encoding)
-    let audio_result = recorder.finalize_recording().map_err(|e| e.to_string())?;
-
-    // Transcribe
-    let transcription = match audio_result {
-        // Use spawn_blocking to run transcription on a dedicated thread pool.
-        // This allows reqwest::blocking::Client (used by cloud providers and Ollama)
-        // to create its internal tokio runtime safely. block_in_place() would panic
-        // because it forbids runtime creation/destruction inside its context.
-        RecordingOutput::Single(data) => {
-            let provider = provider.clone();
-            let api_key = api_key.clone();
-            let language = language.clone();
-            tauri::async_runtime::spawn_blocking(move || {
-                transcribe_audio(&provider, &api_key, language.as_deref(), data)
-            })
-            .await
-            .map_err(|e| format!("Task join failed: {e}"))?
-            .map_err(|e| e.to_string())?
-        }
-        RecordingOutput::Chunked(chunks) => {
-            // parallel_transcribe is async, so we can await it directly
-            parallel_transcribe(&provider, &api_key, language.as_deref(), chunks, None)
-                .await
-                .map_err(|e| e.to_string())?
-        }
-    };
-
-    // Extract post-processing config and clipboard method from settings (lock scope limited)
-    let (post_process_config, clipboard_method) = {
-        let settings = state.settings.lock().unwrap();
-        let clipboard_method = settings.ui.clipboard_method.clone();
-        let post_process_config = if settings.post_processing.processor != PostProcessor::None {
-            let post_processor = settings.post_processing.processor.clone();
-            let prompt = settings
-                .post_processing.prompt
-                .clone()
-                .unwrap_or_else(|| DEFAULT_POST_PROCESSING_PROMPT.to_string());
-            let ollama_model = settings.services.ollama.model.clone();
-
-            // Get API key or URL based on post-processor type
-            let api_key_or_url = if post_processor.requires_api_key() {
-                settings.post_processing.api_key(&settings.transcription.api_keys)
-            } else if post_processor == PostProcessor::Ollama {
-                let ollama_url = settings
-                    .services.ollama.url()
-                    .unwrap_or_else(|| ollama::DEFAULT_OLLAMA_URL.to_string());
-                Some(ollama_url)
-            } else {
-                None
-            };
-
-            api_key_or_url.map(|key_or_url| (post_processor, prompt, ollama_model, key_or_url))
-        } else {
-            None
-        };
-        (post_process_config, clipboard_method)
-    };
-
-    // Apply post-processing if enabled (outside of lock scope)
-    let final_text = if let Some((post_processor, prompt, ollama_model, key_or_url)) =
-        post_process_config
-    {
-        // Auto-start Ollama if needed (and installed)
-        // Use spawn_blocking because ensure_ollama_running uses reqwest::blocking::Client
-        // which creates an internal tokio runtime that would panic if dropped in async context
-        if post_processor == PostProcessor::Ollama {
-            let url_for_check = key_or_url.clone();
-            let ollama_result = tauri::async_runtime::spawn_blocking(move || {
-                ollama::ensure_ollama_running(&url_for_check)
-            })
-            .await
-            .map_err(|e| format!("Task join failed: {e}"))?;
-
-            if let Err(e) = ollama_result {
-                let warning = format!("Ollama: {e}");
-                eprintln!("Post-processing warning: {warning}");
-                let _ = app.emit("post-process-warning", &warning);
-                // Skip post-processing, return raw transcription
-                copy_to_clipboard(&transcription, clipboard_method).map_err(|e| e.to_string())?;
-                println!(
-                    "Done (unprocessed): {}",
-                    &transcription[..transcription.len().min(50)]
-                );
-                let _ = app.emit("transcription-complete", &transcription);
-                return Ok(());
-            }
-        }
-
-        println!("Post-processing...");
-        let _ = app.emit("post-process-started", ());
-
-        let model = if post_processor == PostProcessor::Ollama {
-            ollama_model.as_deref()
-        } else {
-            None
-        };
-
-        match post_process(&transcription, &post_processor, &key_or_url, &prompt, model).await {
-            Ok(processed) => processed,
-            Err(e) => {
-                let warning = e.to_string();
-                eprintln!("Post-processing warning: {warning}");
-                let _ = app.emit("post-process-warning", &warning);
-                transcription
-            }
-        }
-    } else {
-        transcription
-    };
-
-    // Copy to clipboard
-    copy_to_clipboard(&final_text, clipboard_method).map_err(|e| e.to_string())?;
-
-    println!("Done: {}", &final_text[..final_text.len().min(50)]);
-
-    // Emit event to frontend so it knows transcription completed
-    let _ = app.emit("transcription-complete", &final_text);
-
-    Ok(())
 }
 
 fn update_tray(app: &AppHandle, new_state: RecordingState) {
@@ -493,9 +268,4 @@ fn set_tray_icon(tray: &tauri::tray::TrayIcon, icon_bytes: &[u8]) {
         }
         Err(e) => eprintln!("Failed to load tray icon: {e}"),
     }
-}
-
-/// Public wrapper for toggle_recording to be called from global shortcuts
-pub fn toggle_recording_public(app: AppHandle) {
-    toggle_recording(app);
 }

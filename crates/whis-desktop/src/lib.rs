@@ -1,4 +1,5 @@
 mod commands;
+pub mod recording;
 pub mod shortcuts;
 mod state;
 pub mod tray;
@@ -64,6 +65,18 @@ if !args.contains(&"--start-in-tray".to_string()) {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            // System commands (Phase 1)
+            commands::get_toggle_command,
+            commands::can_reopen_window,
+            commands::list_audio_devices,
+            commands::exit_app,
+            // Validation commands (Phase 1)
+            commands::validate_openai_api_key,
+            commands::validate_mistral_api_key,
+            commands::validate_groq_api_key,
+            commands::validate_deepgram_api_key,
+            commands::validate_elevenlabs_api_key,
+            // TODO: Phase 3 - migrate these commands to modular structure
             commands::get_status,
             commands::is_api_configured,
             commands::get_settings,
@@ -72,16 +85,9 @@ if !args.contains(&"--start-in-tray".to_string()) {
             commands::configure_shortcut,
             commands::configure_shortcut_with_trigger,
             commands::portal_shortcut,
-            commands::validate_openai_api_key,
-            commands::validate_mistral_api_key,
-            commands::validate_groq_api_key,
-            commands::validate_deepgram_api_key,
-            commands::validate_elevenlabs_api_key,
             commands::reset_shortcut,
             commands::portal_bind_error,
-            commands::get_toggle_command,
             commands::toggle_recording,
-            commands::can_reopen_window,
             commands::download_whisper_model,
             commands::test_ollama_connection,
             commands::list_ollama_models,
@@ -103,8 +109,6 @@ if !args.contains(&"--start-in-tray".to_string()) {
             commands::create_preset,
             commands::update_preset,
             commands::delete_preset,
-            commands::list_audio_devices,
-            commands::exit_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

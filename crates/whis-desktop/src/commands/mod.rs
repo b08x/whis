@@ -1,3 +1,19 @@
+//! Tauri Command Handlers
+//!
+//! This module organizes all Tauri command handlers by domain.
+//! Each sub-module contains related commands that are exposed to the frontend.
+//!
+//! Phase 1: validation and system commands extracted to separate modules
+//! TODO Phase 3: Extract remaining commands (models, presets, ollama, settings, etc.)
+
+mod system;
+mod validation;
+
+// Re-export Phase 1 commands
+pub use system::*;
+pub use validation::*;
+
+// TODO Phase 3: These will be extracted to separate modules
 use crate::shortcuts::ShortcutBackendInfo;
 use crate::state::AppState;
 use tauri::{AppHandle, Manager, State};
@@ -9,6 +25,7 @@ use std::sync::{Mutex, OnceLock};
 use whis_core::model::ParakeetModel;
 
 // Global locks for preventing concurrent model downloads
+// TODO Phase 3: Move to commands/models/downloads.rs
 static WHISPER_DOWNLOAD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 static PARAKEET_DOWNLOAD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
@@ -31,6 +48,7 @@ pub struct SaveSettingsResponse {
     pub needs_restart: bool,
 }
 
+// TODO Phase 3: Move to commands/recording.rs
 #[tauri::command]
 pub async fn is_api_configured(state: State<'_, AppState>) -> Result<bool, String> {
     let settings = state.settings.lock().unwrap();
@@ -60,10 +78,11 @@ pub async fn get_status(state: State<'_, AppState>) -> Result<StatusResponse, St
 
 #[tauri::command]
 pub async fn toggle_recording(app: AppHandle) -> Result<(), String> {
-    crate::tray::toggle_recording_public(app);
+    crate::recording::toggle_recording(app);
     Ok(())
 }
 
+// TODO Phase 3: Move to commands/settings.rs
 #[tauri::command]
 pub async fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
     let settings = state.settings.lock().unwrap();
@@ -71,6 +90,7 @@ pub async fn get_settings(state: State<'_, AppState>) -> Result<Settings, String
     Ok(settings.clone())
 }
 
+// TODO Phase 3: Move to commands/shortcuts.rs
 #[tauri::command]
 pub fn shortcut_backend() -> ShortcutBackendInfo {
     crate::shortcuts::backend_info()
@@ -107,6 +127,7 @@ pub fn portal_shortcut(state: State<'_, AppState>) -> Result<Option<String>, Str
     Ok(crate::shortcuts::read_portal_shortcut_from_dconf())
 }
 
+// TODO Phase 3: Move to commands/settings.rs
 #[tauri::command]
 pub async fn save_settings(
     app: AppHandle,
@@ -147,75 +168,7 @@ pub async fn save_settings(
     Ok(SaveSettingsResponse { needs_restart })
 }
 
-#[tauri::command]
-pub fn validate_openai_api_key(api_key: String) -> Result<bool, String> {
-    // Validate format: OpenAI keys start with "sk-"
-    if api_key.is_empty() {
-        return Ok(true); // Empty is valid (will fall back to env var)
-    }
-
-    if !api_key.starts_with("sk-") {
-        return Err("Invalid key format. OpenAI keys start with 'sk-'".to_string());
-    }
-
-    Ok(true)
-}
-
-#[tauri::command]
-pub fn validate_mistral_api_key(api_key: String) -> Result<bool, String> {
-    // Empty is valid (will fall back to env var)
-    if api_key.is_empty() {
-        return Ok(true);
-    }
-
-    // Basic validation: Mistral keys should be reasonably long
-    let trimmed = api_key.trim();
-    if trimmed.len() < 20 {
-        return Err("Invalid Mistral API key: key appears too short".to_string());
-    }
-
-    Ok(true)
-}
-
-#[tauri::command]
-pub fn validate_groq_api_key(api_key: String) -> Result<bool, String> {
-    if api_key.is_empty() {
-        return Ok(true); // Empty is valid (will fall back to env var)
-    }
-
-    if !api_key.starts_with("gsk_") {
-        return Err("Invalid key format. Groq keys start with 'gsk_'".to_string());
-    }
-
-    Ok(true)
-}
-
-#[tauri::command]
-pub fn validate_deepgram_api_key(api_key: String) -> Result<bool, String> {
-    if api_key.is_empty() {
-        return Ok(true);
-    }
-
-    if api_key.trim().len() < 20 {
-        return Err("Invalid Deepgram API key: key appears too short".to_string());
-    }
-
-    Ok(true)
-}
-
-#[tauri::command]
-pub fn validate_elevenlabs_api_key(api_key: String) -> Result<bool, String> {
-    if api_key.is_empty() {
-        return Ok(true);
-    }
-
-    if api_key.trim().len() < 20 {
-        return Err("Invalid ElevenLabs API key: key appears too short".to_string());
-    }
-
-    Ok(true)
-}
-
+// TODO Phase 3: Move to commands/shortcuts.rs
 /// Reset portal shortcuts by clearing dconf (GNOME)
 /// This allows rebinding after restart
 #[cfg(target_os = "linux")]
@@ -244,40 +197,7 @@ pub fn portal_bind_error(state: State<'_, AppState>) -> Option<String> {
     state.portal_bind_error.lock().unwrap().clone()
 }
 
-/// Get the correct toggle command based on installation type
-#[tauri::command]
-pub fn get_toggle_command() -> String {
-    if std::path::Path::new("/.flatpak-info").exists() {
-        "flatpak run ink.whis.Whis --toggle".to_string()
-    } else {
-        "whis-desktop --toggle".to_string()
-    }
-}
-
-/// Check if user can reopen the window after closing
-/// Returns true if tray is available OR a working shortcut exists
-#[tauri::command]
-pub fn can_reopen_window(state: State<'_, AppState>) -> bool {
-    // If tray is available, user can always reopen from there
-    if *state.tray_available.lock().unwrap() {
-        return true;
-    }
-
-    // Check shortcut backend - some always work, some need verification
-    let backend_info = crate::shortcuts::backend_info();
-    match backend_info.backend.as_str() {
-        "TauriPlugin" => true, // X11 shortcuts always work
-        "ManualSetup" => true, // IPC toggle always available
-        "PortalGlobalShortcuts" => {
-            // Portal needs a bound shortcut without errors
-            let has_shortcut = state.portal_shortcut.lock().unwrap().is_some();
-            let no_error = state.portal_bind_error.lock().unwrap().is_none();
-            has_shortcut && no_error
-        }
-        _ => false,
-    }
-}
-
+// TODO Phase 3: Move to commands/models/ directory
 /// Progress event payload for model download
 #[derive(Clone, serde::Serialize)]
 pub struct DownloadProgress {
@@ -495,6 +415,7 @@ pub async fn download_parakeet_model(
     .map_err(|e| e.to_string())?
 }
 
+// TODO Phase 3: Move to commands/presets.rs
 /// Preset info for the UI
 #[derive(serde::Serialize)]
 pub struct PresetInfo {
@@ -697,6 +618,7 @@ pub fn delete_preset(name: String, state: State<'_, AppState>) -> Result<(), Str
     Ok(())
 }
 
+// TODO Phase 3: Move to commands/ollama.rs
 /// Test connection to Ollama server
 /// Must be async with spawn_blocking because reqwest::blocking::Client
 /// creates an internal tokio runtime that would panic if called from Tauri's async context
@@ -878,6 +800,7 @@ pub async fn start_ollama(url: String) -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
+// TODO Phase 3: Move to commands/settings.rs
 /// Configuration readiness check result
 #[derive(serde::Serialize)]
 pub struct ConfigReadiness {
@@ -979,17 +902,4 @@ fn capitalize(s: &str) -> String {
         None => String::new(),
         Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
     }
-}
-
-/// List available audio input devices
-#[tauri::command]
-pub fn list_audio_devices() -> Result<Vec<whis_core::AudioDeviceInfo>, String> {
-    whis_core::list_audio_devices().map_err(|e| e.to_string())
-}
-
-/// Exit the application gracefully
-/// Called after settings have been flushed to disk
-#[tauri::command]
-pub fn exit_app(app: AppHandle) {
-    app.exit(0);
 }
