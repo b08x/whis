@@ -183,6 +183,22 @@ setup-cli:
         fi
     fi
 
+    # Check Vulkan SDK (required for local transcription with transcribe-rs)
+    if pkg-config --exists vulkan 2>/dev/null; then
+        echo "✓ Vulkan SDK"
+    else
+        echo "❌ Vulkan SDK not found (required for local transcription)"
+        if command -v apt >/dev/null 2>&1; then
+            echo "   Run: sudo apt install libvulkan-dev vulkan-tools glslc libshaderc-dev"
+        elif command -v dnf >/dev/null 2>&1; then
+            echo "   Run: sudo dnf install vulkan-devel vulkan-tools glslc libshaderc-devel"
+        elif command -v pacman >/dev/null 2>&1; then
+            echo "   Run: sudo pacman -S vulkan-headers vulkan-tools shaderc"
+        else
+            echo "   Install Vulkan SDK using your package manager"
+        fi
+    fi
+
     echo ""
     echo "If all checks pass, run: just build-cli"
 

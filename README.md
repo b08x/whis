@@ -78,8 +78,13 @@ Or download binaries from [GitHub Releases](https://github.com/frankdierolf/whis
 
 ## Requirements
 
-- API key from [OpenAI](https://platform.openai.com/api-keys), [Mistral](https://console.mistral.ai/api-keys), [Groq](https://console.groq.com/keys), [Deepgram](https://deepgram.com), or [ElevenLabs](https://elevenlabs.io) — or use local Whisper (no API key needed)
+- API key from [OpenAI](https://platform.openai.com/api-keys), [Mistral](https://console.mistral.ai/api-keys), [Groq](https://console.groq.com/keys), [Deepgram](https://deepgram.com), or [ElevenLabs](https://elevenlabs.io) — or use local Whisper/Parakeet (no API key needed)
 - FFmpeg (`sudo apt install ffmpeg`, `brew install ffmpeg`, or `scoop install ffmpeg`)
+- **Linux only**: Vulkan SDK for local transcription
+  ```bash
+  sudo apt install libvulkan-dev vulkan-tools glslc libshaderc-dev  # Ubuntu/Debian
+  sudo pacman -S vulkan-headers vulkan-tools shaderc                # Arch
+  ```
 - Linux (X11/Wayland), macOS, or Windows
 
 **For hotkey mode** (one-time setup on Linux):
