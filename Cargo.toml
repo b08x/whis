@@ -16,7 +16,7 @@ thiserror = "2.0"
 tokio = { version = "1.48", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "multipart", "rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "multipart", "rustls", "json"] }
 cpal = "0.17"
 hound = "3.5.1"
 arboard = { version = "3.6.1", features = ["wayland-data-control"] }

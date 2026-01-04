@@ -5,7 +5,8 @@
 //! - Direct input for local whisper.cpp
 
 use anyhow::{Context, Result};
-use rubato::{FftFixedIn, Resampler};
+use audioadapter_buffers::direct::InterleavedSlice;
+use rubato::{Fft, FixedSync, Resampler};
 
 /// Target sample rate for transcription (16kHz mono)
 pub const WHISPER_SAMPLE_RATE: u32 = 16000;
@@ -16,7 +17,7 @@ pub const WHISPER_SAMPLE_RATE: u32 = 16000;
 /// in real-time during recording, reducing file size for all providers.
 pub struct FrameResampler {
     /// The rubato resampler (None if source is already 16kHz mono)
-    resampler: Option<FftFixedIn<f32>>,
+    resampler: Option<Fft<f32>>,
     /// Number of input channels
     channels: u16,
     /// Buffer for accumulating input samples until we have enough for a chunk
@@ -43,12 +44,13 @@ impl FrameResampler {
         }
 
         // Create resampler: source_rate -> 16kHz
-        let resampler = FftFixedIn::<f32>::new(
+        let resampler = Fft::<f32>::new(
             source_rate as usize,
             WHISPER_SAMPLE_RATE as usize,
-            1024, // chunk size
-            2,    // sub-chunks for better quality
-            1,    // output channels (mono)
+            1024,              // chunk size
+            2,                 // sub-chunks for better quality
+            1,                 // output channels (mono)
+            FixedSync::Input,  // fixed input size
         )
         .context("Failed to create frame resampler")?;
 
@@ -87,8 +89,11 @@ impl FrameResampler {
         let mut output = Vec::new();
         while self.input_buffer.len() >= self.chunk_size {
             let chunk: Vec<f32> = self.input_buffer.drain(..self.chunk_size).collect();
-            if let Ok(resampled) = resampler.process(&[chunk], None) {
-                output.extend_from_slice(&resampled[0]);
+            // Wrap chunk in AudioAdapter (1 channel, chunk_size frames)
+            if let Ok(adapter) = InterleavedSlice::new(&chunk, 1, chunk.len()) {
+                if let Ok(resampled) = resampler.process(&adapter, 0, None) {
+                    output.extend_from_slice(&resampled.take_data());
+                }
             }
         }
 
@@ -111,9 +116,13 @@ impl FrameResampler {
         let mut padded = std::mem::take(&mut self.input_buffer);
         padded.resize(self.chunk_size, 0.0);
 
-        // Process final chunk
-        if let Ok(resampled) = resampler.process(&[padded], None) {
-            resampled[0].clone()
+        // Process final chunk with AudioAdapter
+        if let Ok(adapter) = InterleavedSlice::new(&padded, 1, padded.len()) {
+            if let Ok(resampled) = resampler.process(&adapter, 0, None) {
+                resampled.take_data()
+            } else {
+                Vec::new()
+            }
         } else {
             Vec::new()
         }
@@ -147,12 +156,13 @@ pub fn resample_to_16k(samples: &[f32], source_rate: u32, channels: u16) -> Resu
     }
 
     // Create resampler
-    let mut resampler = FftFixedIn::<f32>::new(
+    let mut resampler = Fft::<f32>::new(
         source_rate as usize,
         WHISPER_SAMPLE_RATE as usize,
-        1024, // chunk size
-        2,    // sub-chunks
-        1,    // channels (mono)
+        1024,              // chunk size
+        2,                 // sub-chunks
+        1,                 // channels (mono)
+        FixedSync::Input,  // fixed input size
     )
     .context("Failed to create resampler")?;
 
@@ -166,10 +176,13 @@ pub fn resample_to_16k(samples: &[f32], source_rate: u32, channels: u16) -> Resu
             padded.resize(chunk_size, 0.0);
         }
 
+        // Wrap in AudioAdapter (1 channel, padded.len() frames)
+        let adapter = InterleavedSlice::new(&padded, 1, padded.len())
+            .context("Failed to create audio adapter")?;
         let result = resampler
-            .process(&[padded], None)
+            .process(&adapter, 0, None)
             .context("Resampling failed")?;
-        output.extend_from_slice(&result[0]);
+        output.extend_from_slice(&result.take_data());
     }
 
     Ok(output)

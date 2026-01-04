@@ -29,13 +29,15 @@ base64 = { version = "0.22", optional = true }
 mp3lame-encoder = { version = "0.2", optional = true }
 
 # Real-time resampling to 16kHz (always enabled - benefits all providers)
-rubato = "0.16"
+rubato = "1.0"
+audioadapter = "0.5"
+audioadapter-buffers = "2.0"
 
 # Voice Activity Detection using Silero VAD model
 voice_activity_detector = { version = "0.2", optional = true }
 
 # Local transcription via transcribe-rs (unified library for Whisper + Parakeet)
-transcribe-rs = { version = "0.1.4", optional = true }
+transcribe-rs = { version = "0.2.1", features = ["whisper", "parakeet"], optional = true }
 minimp3 = { version = "0.6", optional = true }
 
 # Archive extraction for Parakeet model downloads
