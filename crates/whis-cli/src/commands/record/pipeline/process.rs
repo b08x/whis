@@ -29,11 +29,7 @@ pub async fn process(
             resolve_post_processor(&config.preset, &settings)?;
 
         if !quiet {
-            if whis_core::verbose::is_verbose() {
-                println!("Post-processing...");
-            } else {
-                app::typewriter(" Post-processing...", 25);
-            }
+            app::print_status(" Post-processing...", None);
         }
 
         text = post_process(&api_key, &processor, &text, &prompt, model.as_deref()).await?;

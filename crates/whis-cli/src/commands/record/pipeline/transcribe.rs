@@ -47,11 +47,7 @@ pub async fn transcribe(
     quiet: bool,
 ) -> Result<TranscriptionResult> {
     if !quiet {
-        if whis_core::verbose::is_verbose() {
-            println!("Transcribing...");
-        } else {
-            app::typewriter(" Transcribing...", 25);
-        }
+        app::print_status(" Transcribing...", Some(&config.provider));
     }
 
     let text = match record_result.audio {

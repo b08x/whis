@@ -305,11 +305,7 @@ async fn progressive_record_and_transcribe(
 
     // Wait for transcription to finish
     if !quiet {
-        if whis_core::verbose::is_verbose() {
-            println!("Transcribing...");
-        } else {
-            app::typewriter(" Transcribing...", 25);
-        }
+        app::print_status(" Transcribing...", Some(&transcription_config.provider));
     }
 
     let text = transcription_task.await??;

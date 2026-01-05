@@ -155,3 +155,32 @@ pub fn typewriter(text: &str, delay_ms: u64) {
         thread::sleep(Duration::from_millis(delay_ms));
     }
 }
+
+/// Print status message with optional typewriter animation
+///
+/// Automatically disables animation for real-time providers or when --verbose is used.
+/// This ensures status messages don't slow down the perceived performance of fast providers.
+pub fn print_status(message: &str, provider: Option<&TranscriptionProvider>) {
+    let use_animation = !is_realtime_provider(provider) && !whis_core::verbose::is_verbose();
+
+    if use_animation {
+        // Typewriter animation for batch providers (25ms per character)
+        typewriter(message, 25);
+    } else {
+        // Instant output for real-time providers (no newline, continues on same line)
+        print!("{}", message);
+        std::io::stdout().flush().ok();
+    }
+}
+
+/// Check if provider is a real-time streaming variant
+///
+/// Real-time providers are so fast (~150ms) that the typewriter animation (475ms for
+/// " Transcribing...") actually makes the output feel slower. For these providers,
+/// we use instant status messages to match their speed.
+fn is_realtime_provider(provider: Option<&TranscriptionProvider>) -> bool {
+    matches!(
+        provider,
+        Some(TranscriptionProvider::OpenAIRealtime) | Some(TranscriptionProvider::DeepgramRealtime)
+    )
+}
