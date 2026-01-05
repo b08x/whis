@@ -26,6 +26,7 @@ pub fn provider_description(provider: &TranscriptionProvider) -> &'static str {
         TranscriptionProvider::Mistral => "European provider, good quality",
         TranscriptionProvider::Groq => "Very fast, good for real-time",
         TranscriptionProvider::Deepgram => "Fast, good for conversations",
+        TranscriptionProvider::DeepgramRealtime => "Streaming, very fast (~150ms)",
         TranscriptionProvider::ElevenLabs => "Good multilingual support",
         _ => "",
     }
@@ -39,7 +40,9 @@ pub fn api_key_url(provider: &TranscriptionProvider) -> &'static str {
         }
         TranscriptionProvider::Mistral => "https://console.mistral.ai/api-keys",
         TranscriptionProvider::Groq => "https://console.groq.com/keys",
-        TranscriptionProvider::Deepgram => "https://console.deepgram.com",
+        TranscriptionProvider::Deepgram | TranscriptionProvider::DeepgramRealtime => {
+            "https://console.deepgram.com"
+        }
         TranscriptionProvider::ElevenLabs => "https://elevenlabs.io/app/settings/api-keys",
         _ => "",
     }

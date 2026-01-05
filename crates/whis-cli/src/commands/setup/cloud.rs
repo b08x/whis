@@ -322,7 +322,13 @@ pub fn setup_transcription_cloud() -> Result<()> {
     // Show providers with [configured] marker
     println!("Provider:");
     for (i, provider) in CLOUD_PROVIDERS.iter().enumerate() {
-        let configured = if settings.transcription.api_key_for(provider).is_some() {
+        // Check if this provider or its realtime variant is configured
+        let configured = if settings.transcription.api_key_for(provider).is_some()
+            || (*provider == TranscriptionProvider::OpenAI
+                && settings.transcription.provider == TranscriptionProvider::OpenAIRealtime)
+            || (*provider == TranscriptionProvider::Deepgram
+                && settings.transcription.provider == TranscriptionProvider::DeepgramRealtime)
+        {
             " [configured]"
         } else {
             ""
@@ -338,13 +344,15 @@ pub fn setup_transcription_cloud() -> Result<()> {
     println!();
 
     // Default to current provider if configured, otherwise first
-    // Treat OpenAIRealtime same as OpenAI for default selection
+    // Treat realtime variants same as base provider for default selection
     let default = CLOUD_PROVIDERS
         .iter()
         .position(|p| {
             *p == settings.transcription.provider
                 || (*p == TranscriptionProvider::OpenAI
                     && settings.transcription.provider == TranscriptionProvider::OpenAIRealtime)
+                || (*p == TranscriptionProvider::Deepgram
+                    && settings.transcription.provider == TranscriptionProvider::DeepgramRealtime)
         })
         .map(|i| i + 1)
         .unwrap_or(1);
@@ -371,6 +379,28 @@ pub fn setup_transcription_cloud() -> Result<()> {
         let method_choice = prompt_choice_with_default("Select", 1, 2, Some(current_method))?;
         if method_choice == 2 {
             provider = TranscriptionProvider::OpenAIRealtime;
+        }
+    }
+
+    // If Deepgram selected, ask for method (Standard vs Streaming)
+    if provider == TranscriptionProvider::Deepgram {
+        println!();
+        println!("Method:");
+        println!("  1. Standard  - Batch processing");
+        println!("  2. Streaming - Real-time, very fast (~150ms)");
+        println!();
+
+        // Default to current method if already using Deepgram variant
+        let current_method =
+            if settings.transcription.provider == TranscriptionProvider::DeepgramRealtime {
+                2
+            } else {
+                1
+            };
+
+        let method_choice = prompt_choice_with_default("Select", 1, 2, Some(current_method))?;
+        if method_choice == 2 {
+            provider = TranscriptionProvider::DeepgramRealtime;
         }
     }
 
