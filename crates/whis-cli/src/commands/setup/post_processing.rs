@@ -61,11 +61,53 @@ pub fn setup_post_processing() -> Result<()> {
     ));
 
     // Choose post-processor type
-    let items = vec!["Ollama", "OpenAI", "Mistral", "None"];
+    let items = vec!["OpenAI", "Mistral", "Ollama", "None"];
     let choice = interactive::select("Which post-processor?", &items, Some(0))? + 1;
 
     match choice {
         1 => {
+            // OpenAI setup
+            if settings
+                .transcription
+                .api_key_for(&TranscriptionProvider::OpenAI)
+                .is_none()
+            {
+                interactive::info("OpenAI API key not configured.");
+                interactive::info("Get your API key from: https://platform.openai.com/api-keys");
+                let api_key = prompt_and_validate_key(&TranscriptionProvider::OpenAI)?;
+                settings
+                    .transcription
+                    .set_api_key(&TranscriptionProvider::OpenAI, api_key);
+            }
+
+            settings.post_processing.processor = PostProcessor::OpenAI;
+            settings.save()?;
+
+            interactive::info("Setup complete!");
+            interactive::info("  Post-processor: OpenAI");
+        }
+        2 => {
+            // Mistral setup
+            if settings
+                .transcription
+                .api_key_for(&TranscriptionProvider::Mistral)
+                .is_none()
+            {
+                interactive::info("Mistral API key not configured.");
+                interactive::info("Get your API key from: https://console.mistral.ai/api-keys");
+                let api_key = prompt_and_validate_key(&TranscriptionProvider::Mistral)?;
+                settings
+                    .transcription
+                    .set_api_key(&TranscriptionProvider::Mistral, api_key);
+            }
+
+            settings.post_processing.processor = PostProcessor::Mistral;
+            settings.save()?;
+
+            interactive::info("Setup complete!");
+            interactive::info("  Post-processor: Mistral");
+        }
+        3 => {
             // Ollama setup
             let ollama_url = ollama::DEFAULT_OLLAMA_URL;
 
@@ -89,48 +131,6 @@ pub fn setup_post_processing() -> Result<()> {
             interactive::info("Setup complete!");
             interactive::info(&format!("  Post-processor: Ollama ({})", model));
         }
-        2 => {
-            // OpenAI setup
-            if settings
-                .transcription
-                .api_key_for(&TranscriptionProvider::OpenAI)
-                .is_none()
-            {
-                interactive::info("OpenAI API key not configured.");
-                interactive::info("Get your API key from: https://platform.openai.com/api-keys");
-                let api_key = prompt_and_validate_key(&TranscriptionProvider::OpenAI)?;
-                settings
-                    .transcription
-                    .set_api_key(&TranscriptionProvider::OpenAI, api_key);
-            }
-
-            settings.post_processing.processor = PostProcessor::OpenAI;
-            settings.save()?;
-
-            interactive::info("Setup complete!");
-            interactive::info("  Post-processor: OpenAI");
-        }
-        3 => {
-            // Mistral setup
-            if settings
-                .transcription
-                .api_key_for(&TranscriptionProvider::Mistral)
-                .is_none()
-            {
-                interactive::info("Mistral API key not configured.");
-                interactive::info("Get your API key from: https://console.mistral.ai/api-keys");
-                let api_key = prompt_and_validate_key(&TranscriptionProvider::Mistral)?;
-                settings
-                    .transcription
-                    .set_api_key(&TranscriptionProvider::Mistral, api_key);
-            }
-
-            settings.post_processing.processor = PostProcessor::Mistral;
-            settings.save()?;
-
-            interactive::info("Setup complete!");
-            interactive::info("  Post-processor: Mistral");
-        }
         4 => {
             // Disable post-processing
             settings.post_processing.processor = PostProcessor::None;
@@ -146,12 +146,46 @@ pub fn setup_post_processing() -> Result<()> {
 
 /// Configure post-processing options (used within cloud setup flow)
 pub fn configure_post_processing_options(settings: &mut Settings) -> Result<()> {
-    let items = vec!["Ollama", "OpenAI", "Mistral", "None"];
+    let items = vec!["OpenAI", "Mistral", "Ollama", "None"];
 
     let choice = interactive::select("Which post-processor?", &items, Some(0))? + 1;
 
     match choice {
         1 => {
+            // OpenAI
+            if settings
+                .transcription
+                .api_key_for(&TranscriptionProvider::OpenAI)
+                .is_none()
+            {
+                interactive::info("OpenAI API key not configured.");
+                interactive::info("Get your API key from: https://platform.openai.com/api-keys");
+                let api_key = prompt_and_validate_key(&TranscriptionProvider::OpenAI)?;
+                settings
+                    .transcription
+                    .set_api_key(&TranscriptionProvider::OpenAI, api_key);
+            }
+            settings.post_processing.processor = PostProcessor::OpenAI;
+            settings.save()?;
+        }
+        2 => {
+            // Mistral
+            if settings
+                .transcription
+                .api_key_for(&TranscriptionProvider::Mistral)
+                .is_none()
+            {
+                interactive::info("Mistral API key not configured.");
+                interactive::info("Get your API key from: https://console.mistral.ai/api-keys");
+                let api_key = prompt_and_validate_key(&TranscriptionProvider::Mistral)?;
+                settings
+                    .transcription
+                    .set_api_key(&TranscriptionProvider::Mistral, api_key);
+            }
+            settings.post_processing.processor = PostProcessor::Mistral;
+            settings.save()?;
+        }
+        3 => {
             // Ollama setup
             let ollama_url = ollama::DEFAULT_OLLAMA_URL;
 
@@ -173,40 +207,6 @@ pub fn configure_post_processing_options(settings: &mut Settings) -> Result<()> 
             settings.post_processing.processor = PostProcessor::Ollama;
             settings.services.ollama.url = Some(ollama_url.to_string());
             settings.services.ollama.model = Some(model);
-            settings.save()?;
-        }
-        2 => {
-            // OpenAI
-            if settings
-                .transcription
-                .api_key_for(&TranscriptionProvider::OpenAI)
-                .is_none()
-            {
-                interactive::info("OpenAI API key not configured.");
-                interactive::info("Get your API key from: https://platform.openai.com/api-keys");
-                let api_key = prompt_and_validate_key(&TranscriptionProvider::OpenAI)?;
-                settings
-                    .transcription
-                    .set_api_key(&TranscriptionProvider::OpenAI, api_key);
-            }
-            settings.post_processing.processor = PostProcessor::OpenAI;
-            settings.save()?;
-        }
-        3 => {
-            // Mistral
-            if settings
-                .transcription
-                .api_key_for(&TranscriptionProvider::Mistral)
-                .is_none()
-            {
-                interactive::info("Mistral API key not configured.");
-                interactive::info("Get your API key from: https://console.mistral.ai/api-keys");
-                let api_key = prompt_and_validate_key(&TranscriptionProvider::Mistral)?;
-                settings
-                    .transcription
-                    .set_api_key(&TranscriptionProvider::Mistral, api_key);
-            }
-            settings.post_processing.processor = PostProcessor::Mistral;
             settings.save()?;
         }
         4 => {
@@ -306,10 +306,10 @@ pub fn select_ollama_model(url: &str, current_model: Option<&str>) -> Result<Str
             prefix_match.or_else(|| model_data.iter().position(|m| m.is_some()))
         }
     } else {
-        // No current model - select recommended model (qwen2.5:1.5b)
+        // No current model - select recommended model (ministral:3b)
         let recommended = model_data.iter().position(|m| {
             if let Some((name, _)) = m {
-                name.starts_with("qwen2.5:1.5b")
+                name.starts_with("ministral:3b")
             } else {
                 false
             }

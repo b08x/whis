@@ -17,10 +17,10 @@ pub const DEFAULT_OLLAMA_MODEL: &str = "qwen2.5:1.5b";
 
 /// Alternative models for post-processing (name, size, description)
 pub const OLLAMA_MODEL_OPTIONS: &[(&str, &str, &str)] = &[
-    ("qwen2.5:1.5b", "1.0 GB", ""),
-    ("qwen2.5:3b", "1.9 GB", ""),
     ("ministral:3b", "1.9 GB", "European"),
     ("gemma2:2b", "1.6 GB", "Google"),
+    ("qwen2.5:3b", "1.9 GB", ""),
+    ("qwen2.5:1.5b", "1.0 GB", ""),
 ];
 
 /// Timeout for Ollama to start
