@@ -141,6 +141,13 @@ just check-all   # Run all checks (format + lint)
 - Open an [issue](https://github.com/frankdierolf/whis/issues) for bugs or questions
 - Check existing issues before creating new ones
 
-## License
+## Maintainer Notes
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+I like to express philosophy through priorities:
+
+**CLI > Desktop > Mobile**
+**Linux > macOS > Windows**
+**Android > iOS**
+**Cloud > Local**
+
+These are just my thoughts for contributions—do what feels right to you. Building for people who love simplicity and openness is kind of the underlying theme.
