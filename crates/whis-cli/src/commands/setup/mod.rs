@@ -5,6 +5,7 @@
 //! - Local users (on-device transcription)
 
 mod cloud;
+mod interactive;
 mod local;
 mod post_processing;
 mod provider_helpers;
@@ -25,9 +26,7 @@ pub fn run(mode: Option<SetupMode>) -> Result<()> {
 
 /// Unified setup wizard - guides user through all configuration
 fn setup_wizard() -> Result<()> {
-    println!("whis setup");
-    println!("==========");
-    println!();
+    interactive::header("whis setup");
 
     // Step 1: Transcription - Cloud or Local?
     println!("How do you want to transcribe?");
@@ -53,7 +52,7 @@ fn setup_wizard() -> Result<()> {
     post_processing::setup_post_processing_step(is_cloud)?;
 
     println!();
-    println!("Done! Run 'whis' to record and transcribe.");
+    interactive::success("Configuration saved! Run 'whis' to record and transcribe.");
 
     Ok(())
 }
