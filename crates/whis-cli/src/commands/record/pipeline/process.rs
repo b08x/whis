@@ -32,7 +32,7 @@ pub async fn process(
             app::print_status(" Post-processing...", None);
         }
 
-        text = post_process(&api_key, &processor, &text, &prompt, model.as_deref()).await?;
+        text = post_process(&text, &processor, &api_key, &prompt, model.as_deref()).await?;
     }
 
     Ok(ProcessedResult { text })

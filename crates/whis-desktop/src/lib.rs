@@ -86,6 +86,7 @@ pub fn run(start_in_tray: bool) {
             commands::can_reopen_window,
             commands::list_audio_devices,
             commands::exit_app,
+            commands::warmup_connections,
             // Validation commands
             commands::validate_openai_api_key,
             commands::validate_mistral_api_key,

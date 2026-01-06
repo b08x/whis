@@ -209,6 +209,10 @@ onMounted(async () => {
   checkConfigReadiness()
   pollInterval = window.setInterval(fetchStatus, 500)
 
+  // Warm up HTTP client and cloud connections in background (non-blocking)
+  // This reduces latency on the first transcription request
+  invoke('warmup_connections').catch(console.error)
+
   // Listen for post-processing events
   unlistenPostProcessWarning = await listen<string>('post-process-warning', (event) => {
     postProcessWarning.value = event.payload

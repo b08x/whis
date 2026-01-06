@@ -73,6 +73,7 @@ pub fn run() {
             // System commands
             commands::get_status,
             commands::validate_api_key,
+            commands::warmup_connections,
             // Preset commands
             commands::list_presets,
             commands::get_preset_details,

@@ -5,6 +5,7 @@
 
 use crate::state::AppState;
 use tauri::{AppHandle, State};
+use whis_core::{Settings, WarmupConfig, warmup_configured};
 
 #[tauri::command]
 pub fn get_toggle_command() -> String {
@@ -49,4 +50,46 @@ pub fn list_audio_devices() -> Result<Vec<whis_core::AudioDeviceInfo>, String> {
 #[tauri::command]
 pub fn exit_app(app: AppHandle) {
     app.exit(0);
+}
+
+/// Warm up HTTP client and cloud connections based on current settings.
+///
+/// This should be called after the app is mounted to reduce latency
+/// on the first transcription request. The warmup is best-effort and
+/// will not block the UI.
+#[tauri::command]
+pub async fn warmup_connections() -> Result<(), String> {
+    let settings = Settings::load();
+
+    // Get provider and its API key
+    let provider = Some(settings.transcription.provider.to_string());
+    let provider_api_key = settings.transcription.api_key();
+
+    // Get post-processor and its API key
+    let post_processor = match &settings.post_processing.processor {
+        whis_core::PostProcessor::None => None,
+        p => Some(p.to_string()),
+    };
+    let post_processor_api_key = if post_processor.is_some() {
+        settings
+            .post_processing
+            .api_key(&settings.transcription.api_keys)
+    } else {
+        None
+    };
+
+    // Build warmup config
+    let config = WarmupConfig {
+        provider,
+        provider_api_key,
+        post_processor,
+        post_processor_api_key,
+    };
+
+    // Run warmup (best-effort, errors are logged but not propagated)
+    warmup_configured(&config)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
 }

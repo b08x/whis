@@ -241,6 +241,10 @@ onMounted(async () => {
   await settingsStore.initialize()
   await checkConfig()
 
+  // Warm up HTTP client and cloud connections in background (non-blocking)
+  // This reduces latency on the first transcription request
+  invoke('warmup_connections').catch(console.error)
+
   // Listen for post-processing started event
   const unlistenPostProcess = await listen('post-processing-started', () => {
     isTranscribing.value = false
@@ -259,11 +263,18 @@ onMounted(async () => {
     resetState()
   })
 
+  // Listen for post-processing warning (post-processing failed, raw text copied)
+  const unlistenWarning = await listen<string>('post-process-warning', (event) => {
+    error.value = `Post-processing failed: ${event.payload}. Raw transcript copied.`
+    // Don't reset state - transcription-complete will handle that
+  })
+
   // Cleanup on unmount
   onUnmounted(() => {
     unlistenPostProcess()
     unlistenComplete()
     unlistenError()
+    unlistenWarning()
 
     if (audioStreamer) {
       audioStreamer.stop()

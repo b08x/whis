@@ -197,7 +197,7 @@ async fn progressive_record_and_transcribe(
     use whis_core::progressive_transcribe_local;
     use whis_core::{
         AudioRecorder, ChunkerConfig, ProgressiveChunker, Settings, TranscriptionProvider,
-        progressive_transcribe_cloud,
+        WarmupConfig, progressive_transcribe_cloud, warmup_configured,
     };
 
     // Create recorder
@@ -210,6 +210,43 @@ async fn progressive_record_and_transcribe(
 
     // Preload models in background (same as batch mode)
     preload_models(&mic_config);
+
+    // Warm up HTTP client and cloud connections in background
+    // This overlaps with user speaking, so connection is ready when transcription starts
+    {
+        let provider = transcription_config.provider.to_string();
+        let api_key = transcription_config.api_key.clone();
+
+        // Load settings once for post-processing config
+        let (post_processor, post_processor_api_key) = if mic_config.will_post_process {
+            let settings = Settings::load();
+            let processor = match &settings.post_processing.processor {
+                whis_core::PostProcessor::None => None,
+                p => Some(p.to_string()),
+            };
+            let pp_api_key = if processor.is_some() {
+                settings
+                    .post_processing
+                    .api_key(&settings.transcription.api_keys)
+            } else {
+                None
+            };
+            (processor, pp_api_key)
+        } else {
+            (None, None)
+        };
+
+        let config = WarmupConfig {
+            provider: Some(provider),
+            provider_api_key: Some(api_key),
+            post_processor,
+            post_processor_api_key,
+        };
+
+        tokio::spawn(async move {
+            let _ = warmup_configured(&config).await;
+        });
+    }
 
     // Start streaming recording
     let mut audio_rx_bounded = recorder.start_recording_streaming()?;
