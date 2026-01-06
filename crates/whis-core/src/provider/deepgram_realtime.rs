@@ -26,7 +26,10 @@ use tokio_tungstenite::{
     },
 };
 
-use super::{DeepgramProvider, TranscriptionBackend, TranscriptionRequest, TranscriptionResult};
+use super::{
+    DeepgramProvider, RealtimeTranscriptionBackend, TranscriptionBackend, TranscriptionRequest,
+    TranscriptionResult,
+};
 
 const WS_URL: &str = "wss://api.deepgram.com/v1/listen";
 const MODEL: &str = "nova-2";
@@ -55,6 +58,9 @@ struct DeepgramEvent {
     channel: Option<Channel>,
     #[serde(default)]
     description: Option<String>,
+    /// Set to true when this result is from a Finalize message
+    #[serde(default)]
+    from_finalize: bool,
 }
 
 #[derive(Deserialize, Debug)]
@@ -74,7 +80,7 @@ impl DeepgramRealtimeProvider {
     ///
     /// Connects to Deepgram Live Streaming API via WebSocket and streams audio chunks
     /// as they arrive. Returns the final transcript when the channel closes.
-    pub async fn transcribe_stream(
+    async fn transcribe_stream_impl(
         api_key: &str,
         mut audio_rx: mpsc::Receiver<Vec<f32>>,
         language: Option<String>,
@@ -104,17 +110,20 @@ impl DeepgramRealtimeProvider {
         let (write, read) = ws_stream.split();
         let write = Arc::new(Mutex::new(write));
 
-        // 4. Spawn read task to collect transcripts
-        let read_handle = tokio::spawn(async move { collect_transcripts(read).await });
+        // 4. Create done channel to signal when Finalize is sent
+        let (done_tx, done_rx) = oneshot::channel();
 
-        // 5. Spawn keepalive task
+        // 5. Spawn read task to collect transcripts
+        let read_handle = tokio::spawn(async move { collect_transcripts(read, done_rx).await });
+
+        // 6. Spawn keepalive task
         let (keepalive_cancel_tx, keepalive_cancel_rx) = oneshot::channel();
         let keepalive_handle = tokio::spawn({
             let write = Arc::clone(&write);
             async move { keepalive_task(write, keepalive_cancel_rx).await }
         });
 
-        // 6. Stream audio chunks as binary frames
+        // 7. Stream audio chunks as binary frames
         let mut chunk_count = 0;
         let mut total_samples = 0;
 
@@ -151,11 +160,11 @@ impl DeepgramRealtimeProvider {
             );
         }
 
-        // 7. Cancel keepalive task
+        // 8. Cancel keepalive task
         let _ = keepalive_cancel_tx.send(());
         let _ = keepalive_handle.await;
 
-        // 8. Send Finalize message to flush buffer
+        // 9. Send Finalize message to flush buffer
         write
             .lock()
             .await
@@ -163,10 +172,13 @@ impl DeepgramRealtimeProvider {
             .await
             .context("Failed to send Finalize message")?;
 
-        // 9. Wait for final transcript with timeout
+        // 10. Signal read task that Finalize was sent
+        let _ = done_tx.send(());
+
+        // 11. Wait for final transcript with timeout
         let transcript_result = timeout(Duration::from_secs(30), read_handle).await;
 
-        // 10. Close connection gracefully
+        // 12. Close connection gracefully
         let _ = write.lock().await.send(Message::Close(None)).await;
 
         match transcript_result {
@@ -175,6 +187,17 @@ impl DeepgramRealtimeProvider {
             Ok(Err(e)) => Err(anyhow!("Read task panicked: {e}")),
             Err(_) => Err(anyhow!("Timeout waiting for transcription result")),
         }
+    }
+
+    /// Transcribe audio from a channel of f32 samples (16kHz mono)
+    ///
+    /// This is a convenience method that delegates to the trait implementation.
+    pub async fn transcribe_stream(
+        api_key: &str,
+        audio_rx: mpsc::Receiver<Vec<f32>>,
+        language: Option<String>,
+    ) -> Result<String> {
+        Self::transcribe_stream_impl(api_key, audio_rx, language).await
     }
 }
 
@@ -214,74 +237,180 @@ where
     Ok(())
 }
 
+/// Timeout for waiting for final results after Finalize is sent.
+/// Deepgram docs say from_finalize is not guaranteed, so we use a short timeout.
+const POST_FINALIZE_TIMEOUT_MS: u64 = 500;
+
 /// Collect final transcripts from WebSocket messages
 ///
-/// Processes incoming Deepgram events and accumulates final transcriptions.
-/// Ignores interim results (is_final=false) to avoid duplicates in final output.
-async fn collect_transcripts<S>(mut read: S) -> Result<String>
+/// Two-phase approach (similar to OpenAI implementation):
+/// - Phase 1: During streaming, collect final transcripts as they arrive
+/// - Phase 2: After done signal (Finalize sent), wait for from_finalize=true
+///   or use a short timeout since from_finalize is not guaranteed by Deepgram
+///
+/// This avoids waiting for WebSocket close, which can take many seconds.
+async fn collect_transcripts<S>(mut read: S, mut done_rx: oneshot::Receiver<()>) -> Result<String>
 where
     S: Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
 {
     let mut final_transcript = String::new();
 
-    while let Some(msg) = read.next().await {
-        match msg? {
-            Message::Text(text) => {
-                let event: DeepgramEvent =
-                    serde_json::from_str(&text).context("Failed to parse Deepgram event")?;
-
-                if crate::verbose::is_verbose() && event.event_type != "Metadata" {
-                    eprintln!(
-                        "[deepgram-realtime] event: {} (is_final={})",
-                        event.event_type, event.is_final
-                    );
-                }
-
-                match event.event_type.as_str() {
-                    "Results" => {
-                        // Only collect final results (ignore interim results where is_final=false)
-                        if event.is_final
-                            && let Some(channel) = event.channel
-                            && let Some(alt) = channel.alternatives.first()
-                            && !alt.transcript.is_empty()
-                        {
-                            final_transcript.push_str(&alt.transcript);
-                            final_transcript.push(' ');
-                        }
-                    }
-                    "Metadata" => {
-                        // Connection metadata, ignore for now
-                    }
-                    "error" => {
-                        if let Some(desc) = event.description {
-                            return Err(anyhow!("Deepgram error: {}", desc));
-                        }
-                        return Err(anyhow!("Deepgram error (no description)"));
-                    }
-                    _ => {
-                        // Unknown event type, ignore
-                    }
-                }
-            }
-            Message::Close(frame) => {
+    // Phase 1: Collect transcripts during streaming
+    loop {
+        tokio::select! {
+            // Check if main task signaled that Finalize was sent
+            _ = &mut done_rx => {
                 if crate::verbose::is_verbose() {
-                    eprintln!("[deepgram-realtime] WebSocket closed: {:?}", frame);
+                    eprintln!("[deepgram-realtime] Finalize sent, switching to post-finalize phase");
                 }
+                // Break to phase 2
                 break;
             }
-            Message::Ping(_) | Message::Pong(_) => {
-                // Tungstenite handles ping/pong automatically
-            }
-            Message::Binary(_) => {
-                // Unexpected binary message from server, ignore
-            }
-            Message::Frame(_) => {
-                // Raw frame, ignore
+
+            // Process WebSocket messages
+            msg = read.next() => {
+                if let Some(result) = process_message(msg, &mut final_transcript)? {
+                    return Ok(result);
+                }
             }
         }
     }
 
-    Ok(final_transcript.trim().to_string())
+    // Phase 2: Wait for final results with timeout
+    // Use a short timeout since from_finalize is not guaranteed by Deepgram
+    let timeout_duration = Duration::from_millis(POST_FINALIZE_TIMEOUT_MS);
+    let deadline = tokio::time::Instant::now() + timeout_duration;
+
+    loop {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            if crate::verbose::is_verbose() {
+                eprintln!(
+                    "[deepgram-realtime] Post-finalize timeout, returning with current transcript"
+                );
+            }
+            return Ok(final_transcript.trim().to_string());
+        }
+
+        tokio::select! {
+            _ = tokio::time::sleep(remaining) => {
+                if crate::verbose::is_verbose() {
+                    eprintln!("[deepgram-realtime] Post-finalize timeout, returning with current transcript");
+                }
+                return Ok(final_transcript.trim().to_string());
+            }
+
+            msg = read.next() => {
+                if let Some(result) = process_message(msg, &mut final_transcript)? {
+                    return Ok(result);
+                }
+                // Continue waiting - don't reset the deadline, just process more messages
+            }
+        }
+    }
+}
+
+/// Process a single WebSocket message.
+/// Returns Ok(Some(transcript)) if we should return immediately,
+/// Ok(None) to continue processing, or Err on error.
+fn process_message(
+    msg: Option<Result<Message, tokio_tungstenite::tungstenite::Error>>,
+    final_transcript: &mut String,
+) -> Result<Option<String>> {
+    match msg {
+        Some(Ok(Message::Text(text))) => {
+            let event: DeepgramEvent =
+                serde_json::from_str(&text).context("Failed to parse Deepgram event")?;
+
+            if crate::verbose::is_verbose() && event.event_type != "Metadata" {
+                eprintln!(
+                    "[deepgram-realtime] event: {} (is_final={}, from_finalize={})",
+                    event.event_type, event.is_final, event.from_finalize
+                );
+            }
+
+            match event.event_type.as_str() {
+                "Results" => {
+                    // Only collect final results (ignore interim results where is_final=false)
+                    if event.is_final
+                        && let Some(channel) = event.channel
+                        && let Some(alt) = channel.alternatives.first()
+                        && !alt.transcript.is_empty()
+                    {
+                        final_transcript.push_str(&alt.transcript);
+                        final_transcript.push(' ');
+                    }
+
+                    // If this result is from Finalize, we're done immediately
+                    if event.from_finalize {
+                        if crate::verbose::is_verbose() {
+                            eprintln!(
+                                "[deepgram-realtime] Received from_finalize result, returning"
+                            );
+                        }
+                        return Ok(Some(final_transcript.trim().to_string()));
+                    }
+                }
+                "Metadata" => {
+                    // Connection metadata, ignore
+                }
+                "error" => {
+                    if let Some(desc) = event.description {
+                        return Err(anyhow!("Deepgram error: {}", desc));
+                    }
+                    return Err(anyhow!("Deepgram error (no description)"));
+                }
+                _ => {
+                    // Unknown event type, ignore
+                }
+            }
+            Ok(None)
+        }
+        Some(Ok(Message::Close(frame))) => {
+            if crate::verbose::is_verbose() {
+                eprintln!("[deepgram-realtime] WebSocket closed: {:?}", frame);
+            }
+            // Return current transcript on close
+            Ok(Some(final_transcript.trim().to_string()))
+        }
+        Some(Ok(Message::Ping(_) | Message::Pong(_))) => {
+            // Tungstenite handles ping/pong automatically
+            Ok(None)
+        }
+        Some(Ok(Message::Binary(_))) => {
+            // Unexpected binary message from server, ignore
+            Ok(None)
+        }
+        Some(Ok(Message::Frame(_))) => {
+            // Raw frame, ignore
+            Ok(None)
+        }
+        Some(Err(e)) => Err(anyhow!("WebSocket error: {e}")),
+        None => {
+            // Stream ended, return current transcript
+            Ok(Some(final_transcript.trim().to_string()))
+        }
+    }
+}
+
+#[async_trait]
+impl RealtimeTranscriptionBackend for DeepgramRealtimeProvider {
+    async fn transcribe_stream(
+        &self,
+        api_key: &str,
+        audio_rx: mpsc::Receiver<Vec<f32>>,
+        language: Option<String>,
+    ) -> Result<String> {
+        Self::transcribe_stream_impl(api_key, audio_rx, language).await
+    }
+
+    fn sample_rate(&self) -> u32 {
+        SAMPLE_RATE // 16000
+    }
+
+    fn requires_keepalive(&self) -> bool {
+        true
+    }
 }
 
 #[async_trait]

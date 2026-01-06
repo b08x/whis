@@ -2,6 +2,8 @@
 //!
 //! Uses WebSocket to stream audio in real-time for lower latency transcription.
 //! Audio is streamed during recording rather than buffered and uploaded after.
+//!
+//! See `realtime.rs` module docs for the common implementation pattern.
 
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
@@ -19,7 +21,10 @@ use tokio_tungstenite::{
     },
 };
 
-use super::{OpenAIProvider, TranscriptionBackend, TranscriptionRequest, TranscriptionResult};
+use super::{
+    OpenAIProvider, RealtimeTranscriptionBackend, TranscriptionBackend, TranscriptionRequest,
+    TranscriptionResult,
+};
 
 const WS_URL: &str = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview";
 const REALTIME_SAMPLE_RATE: u32 = 24000;
@@ -101,12 +106,12 @@ impl OpenAIRealtimeProvider {
     ///
     /// Connects to OpenAI Realtime API via WebSocket and streams audio chunks
     /// as they arrive. Returns the final transcript when the channel closes.
-    pub async fn transcribe_stream(
+    async fn transcribe_stream_impl(
         api_key: &str,
         mut audio_rx: mpsc::Receiver<Vec<f32>>,
         _language: Option<String>,
     ) -> Result<String> {
-        // Build WebSocket request with authorization header
+        // 1. Build WebSocket request with auth headers
         let mut request = WS_URL.into_client_request()?;
         request.headers_mut().insert(
             AUTHORIZATION,
@@ -116,14 +121,14 @@ impl OpenAIRealtimeProvider {
             .headers_mut()
             .insert("OpenAI-Beta", HeaderValue::from_static("realtime=v1"));
 
-        // Connect to WebSocket
+        // 2. Connect to WebSocket
         let (ws_stream, _response) = connect_async(request)
             .await
             .context("Failed to connect to OpenAI Realtime API")?;
 
         let (mut write, mut read) = ws_stream.split();
 
-        // Send session configuration
+        // 3. Configure session
         // Disable VAD - we'll explicitly trigger transcription with response.create
         // Server VAD causes issues with longer recordings because it waits for "turn" boundaries
         let session_update = SessionUpdate {
@@ -174,18 +179,18 @@ impl OpenAIRealtimeProvider {
             }
         }
 
-        // Set up channels for concurrent read/write
+        // 4. Create done channel and spawn read task
         // error_tx: read task sends error if server sends one during streaming
         // done_tx: main task signals read task when streaming is complete
         let (error_tx, mut error_rx) = oneshot::channel::<anyhow::Error>();
         let (done_tx, done_rx) = oneshot::channel::<()>();
 
-        // Spawn read task to monitor WebSocket during streaming
-        // This task handles server messages (errors, pings) while we stream audio
         let read_handle =
-            tokio::spawn(async move { read_websocket_events(read, error_tx, done_rx).await });
+            tokio::spawn(async move { collect_transcripts(read, error_tx, done_rx).await });
 
-        // Stream audio chunks while monitoring for errors
+        // 5. (No keepalive needed for OpenAI)
+
+        // 6. Stream audio chunks
         let mut chunk_count = 0;
         let mut total_samples = 0;
 
@@ -194,7 +199,6 @@ impl OpenAIRealtimeProvider {
             match error_rx.try_recv() {
                 Ok(err) => return Err(err),
                 Err(oneshot::error::TryRecvError::Closed) => {
-                    // Read task ended unexpectedly
                     return Err(anyhow!("WebSocket read task ended unexpectedly"));
                 }
                 Err(oneshot::error::TryRecvError::Empty) => {
@@ -204,8 +208,7 @@ impl OpenAIRealtimeProvider {
 
             // Receive next audio chunk
             let Some(samples) = audio_rx.recv().await else {
-                // Audio channel closed - streaming complete
-                break;
+                break; // Audio channel closed - streaming complete
             };
 
             if samples.is_empty() {
@@ -215,7 +218,7 @@ impl OpenAIRealtimeProvider {
             chunk_count += 1;
             total_samples += samples.len();
 
-            // Resample from 16kHz to 24kHz (simple linear interpolation)
+            // Resample from 16kHz to 24kHz (OpenAI requires 24kHz)
             let resampled = resample_16k_to_24k(&samples);
 
             // Convert f32 samples to PCM16 (i16)
@@ -227,7 +230,7 @@ impl OpenAIRealtimeProvider {
             // Convert to bytes (little-endian)
             let bytes: Vec<u8> = pcm16.iter().flat_map(|&s| s.to_le_bytes()).collect();
 
-            // Encode as base64
+            // Encode as base64 (OpenAI requires base64)
             let audio_base64 = BASE64.encode(&bytes);
 
             // Send audio append message
@@ -244,12 +247,12 @@ impl OpenAIRealtimeProvider {
 
         if crate::verbose::is_verbose() {
             eprintln!(
-                "[realtime] Sent {} chunks, {} total samples",
+                "[openai-realtime] Sent {} chunks, {} total samples",
                 chunk_count, total_samples
             );
         }
 
-        // Audio channel closed - commit the buffer
+        // 7. Send finalize messages (commit + response.create)
         let commit = AudioBufferCommit {
             msg_type: "input_audio_buffer.commit",
         };
@@ -268,13 +271,13 @@ impl OpenAIRealtimeProvider {
             .await
             .context("Failed to create response")?;
 
-        // Signal read task that streaming is complete, switch to transcript mode
+        // 8. Signal done_tx to notify read task
         let _ = done_tx.send(());
 
-        // Wait for read task to return transcript with timeout
+        // 9. Wait for read task with timeout (30s)
         let transcript_result = timeout(Duration::from_secs(30), read_handle).await;
 
-        // Close WebSocket gracefully
+        // 10. Close connection gracefully
         let _ = write.send(Message::Close(None)).await;
 
         match transcript_result {
@@ -284,13 +287,27 @@ impl OpenAIRealtimeProvider {
             Err(_) => Err(anyhow!("Timeout waiting for transcription result")),
         }
     }
+
+    /// Transcribe audio from a channel of f32 samples (16kHz mono)
+    ///
+    /// This is a convenience method that delegates to the trait implementation.
+    pub async fn transcribe_stream(
+        api_key: &str,
+        audio_rx: mpsc::Receiver<Vec<f32>>,
+        language: Option<String>,
+    ) -> Result<String> {
+        Self::transcribe_stream_impl(api_key, audio_rx, language).await
+    }
 }
 
-/// Handle WebSocket read events concurrently with audio streaming
+/// Collect transcripts from WebSocket messages.
 ///
-/// During streaming phase: monitors for errors, handles ping/pong
-/// After done signal: waits for final transcript
-async fn read_websocket_events<S>(
+/// Two-phase approach (matching Deepgram implementation pattern):
+/// - Phase 1: During streaming, monitor for errors while audio is being sent
+/// - Phase 2: After done signal, wait for final transcript
+///
+/// This function is named `collect_transcripts` to match Deepgram's pattern.
+async fn collect_transcripts<S>(
     mut read: S,
     error_tx: oneshot::Sender<anyhow::Error>,
     mut done_rx: oneshot::Receiver<()>,
@@ -303,7 +320,9 @@ where
         tokio::select! {
             // Check if main task signaled streaming is complete
             _ = &mut done_rx => {
-                // Streaming complete, transition to transcript waiting phase
+                if crate::verbose::is_verbose() {
+                    eprintln!("[openai-realtime] Finalize sent, switching to post-finalize phase");
+                }
                 break;
             }
 
@@ -361,7 +380,7 @@ where
                     serde_json::from_str(&text).context("Failed to parse server event")?;
 
                 if crate::verbose::is_verbose() {
-                    eprintln!("[realtime] event: {}", event.event_type);
+                    eprintln!("[openai-realtime] event: {}", event.event_type);
                 }
 
                 match event.event_type.as_str() {
@@ -417,6 +436,26 @@ fn resample_16k_to_24k(samples: &[f32]) -> Vec<f32> {
     }
 
     output
+}
+
+#[async_trait]
+impl RealtimeTranscriptionBackend for OpenAIRealtimeProvider {
+    async fn transcribe_stream(
+        &self,
+        api_key: &str,
+        audio_rx: mpsc::Receiver<Vec<f32>>,
+        language: Option<String>,
+    ) -> Result<String> {
+        Self::transcribe_stream_impl(api_key, audio_rx, language).await
+    }
+
+    fn sample_rate(&self) -> u32 {
+        REALTIME_SAMPLE_RATE // 24000
+    }
+
+    fn requires_keepalive(&self) -> bool {
+        false
+    }
 }
 
 #[async_trait]

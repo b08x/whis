@@ -93,6 +93,8 @@ mod mistral;
 mod openai;
 #[cfg(feature = "realtime")]
 mod openai_realtime;
+#[cfg(feature = "realtime")]
+mod realtime;
 
 /// Default timeout for API requests (5 minutes)
 pub const DEFAULT_TIMEOUT_SECS: u64 = 300;
@@ -122,6 +124,8 @@ pub use mistral::MistralProvider;
 pub use openai::OpenAIProvider;
 #[cfg(feature = "realtime")]
 pub use openai_realtime::OpenAIRealtimeProvider;
+#[cfg(feature = "realtime")]
+pub use realtime::RealtimeTranscriptionBackend;
 
 use crate::config::TranscriptionProvider;
 
