@@ -41,3 +41,10 @@ pub struct VisibilityResponse {
 pub struct PermissionResponse {
     pub granted: bool,
 }
+
+/// Options for setting recording state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingOptions {
+    pub recording: bool,
+}

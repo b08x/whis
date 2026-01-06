@@ -1,7 +1,7 @@
 use serde::de::DeserializeOwned;
 use tauri::{
-    plugin::{PluginApi, PluginHandle},
     AppHandle, Runtime,
+    plugin::{PluginApi, PluginHandle},
 };
 
 use crate::models::*;
@@ -58,6 +58,13 @@ impl<R: Runtime> FloatingBubble<R> {
     pub fn has_permission(&self) -> crate::Result<PermissionResponse> {
         self.0
             .run_mobile_plugin("hasOverlayPermission", ())
+            .map_err(Into::into)
+    }
+
+    /// Set the bubble's recording state (changes visual appearance).
+    pub fn set_recording(&self, recording: bool) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin("setBubbleRecording", RecordingOptions { recording })
             .map_err(Into::into)
     }
 }

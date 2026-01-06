@@ -35,17 +35,35 @@ class FloatingBubbleService : Service() {
         var bubbleSize: Int = 60
         var bubbleStartX: Int = 0
         var bubbleStartY: Int = 100
+        
+        // Reference to the current service instance for state updates
+        @Volatile
+        private var instance: FloatingBubbleService? = null
+        
+        /**
+         * Update the bubble's recording state from outside the service.
+         */
+        fun setRecordingState(recording: Boolean) {
+            instance?.updateRecordingState(recording)
+        }
     }
 
     private var windowManager: WindowManager? = null
-    private var bubbleView: View? = null
+    private var bubbleView: ImageView? = null
+    private var bubbleBackground: GradientDrawable? = null
     private var layoutParams: WindowManager.LayoutParams? = null
+    private var isRecording: Boolean = false
+    
+    // Colors
+    private val colorIdle = Color.parseColor("#6366F1")      // Indigo-500
+    private val colorRecording = Color.parseColor("#EF4444") // Red-500
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Service created")
+        instance = this
         
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, createNotification())
@@ -57,6 +75,7 @@ class FloatingBubbleService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "Service destroyed")
+        instance = null
         removeBubble()
         FloatingBubblePlugin.isBubbleVisible = false
     }
@@ -76,28 +95,19 @@ class FloatingBubbleService : Service() {
         }
     }
 
-    private fun createNotification(): Notification {
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Whis Voice Input")
-            .setContentText("Tap the bubble to start recording")
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setOngoing(true)
-            .build()
-    }
-
     private fun createBubble() {
         val density = resources.displayMetrics.density
         val sizePx = (bubbleSize * density).toInt()
 
+        // Create circular background
+        bubbleBackground = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(colorIdle)
+        }
+
         // Create bubble view
         bubbleView = ImageView(this).apply {
-            // Circular indigo background
-            val shape = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#6366F1")) // Indigo-500
-            }
-            background = shape
+            background = bubbleBackground
 
             // Microphone icon
             setImageResource(android.R.drawable.ic_btn_speak_now)
@@ -221,5 +231,41 @@ class FloatingBubbleService : Service() {
         
         layoutParams?.x = targetX
         windowManager?.updateViewLayout(bubbleView, layoutParams)
+    }
+    
+    /**
+     * Update the visual state of the bubble based on recording state.
+     */
+    private fun updateRecordingState(recording: Boolean) {
+        if (isRecording == recording) return
+        isRecording = recording
+        
+        Log.d(TAG, "Recording state changed: $recording")
+        
+        // Update bubble color
+        bubbleBackground?.setColor(if (recording) colorRecording else colorIdle)
+        
+        // Update icon - use stop icon when recording
+        bubbleView?.setImageResource(
+            if (recording) android.R.drawable.ic_media_pause
+            else android.R.drawable.ic_btn_speak_now
+        )
+        
+        // Update notification
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager.notify(NOTIFICATION_ID, createNotification())
+    }
+    
+    private fun createNotification(): Notification {
+        val title = if (isRecording) "Recording..." else "Whis Voice Input"
+        val text = if (isRecording) "Tap bubble to stop" else "Tap the bubble to start recording"
+        
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .build()
     }
 }

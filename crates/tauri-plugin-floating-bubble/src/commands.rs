@@ -1,8 +1,8 @@
-use tauri::{command, AppHandle, Runtime};
+use tauri::{AppHandle, Runtime, command};
 
-use crate::models::*;
 use crate::FloatingBubbleExt;
 use crate::Result;
+use crate::models::*;
 
 /// Show the floating bubble overlay.
 #[command]
@@ -39,4 +39,13 @@ pub(crate) async fn has_overlay_permission<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<PermissionResponse> {
     app.floating_bubble().has_permission()
+}
+
+/// Set the bubble's recording state (changes visual appearance).
+#[command]
+pub(crate) async fn set_bubble_recording<R: Runtime>(
+    app: AppHandle<R>,
+    recording: bool,
+) -> Result<()> {
+    app.floating_bubble().set_recording(recording)
 }

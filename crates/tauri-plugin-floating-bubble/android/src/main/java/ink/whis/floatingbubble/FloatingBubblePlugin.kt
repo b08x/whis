@@ -24,6 +24,14 @@ class BubbleOptions {
 }
 
 /**
+ * Options for setting recording state.
+ */
+@InvokeArg
+class RecordingOptions {
+    var recording: Boolean = false
+}
+
+/**
  * Tauri plugin for displaying floating bubble overlays on Android.
  *
  * This plugin uses the FloatingBubbleView library to show a draggable bubble
@@ -153,6 +161,21 @@ class FloatingBubblePlugin(private val activity: Activity) : Plugin(activity) {
         val result = JSObject()
         result.put("granted", hasOverlayPermissionInternal())
         invoke.resolve(result)
+    }
+
+    /**
+     * Update the bubble's visual state to indicate recording.
+     */
+    @Command
+    fun setBubbleRecording(invoke: Invoke) {
+        val args = invoke.parseArgs(RecordingOptions::class.java)
+        
+        try {
+            FloatingBubbleService.setRecordingState(args.recording)
+            invoke.resolve()
+        } catch (e: Exception) {
+            invoke.reject("Failed to update bubble state: ${e.message}")
+        }
     }
 
     /**

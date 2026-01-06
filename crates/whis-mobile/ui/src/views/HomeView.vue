@@ -1,37 +1,18 @@
 <script setup lang="ts">
-import type { StatusResponse } from '../types'
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
-import { writeText } from '@tauri-apps/plugin-clipboard-manager'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { recordingStore } from '../stores/recording'
 import { settingsStore } from '../stores/settings'
-import { AudioStreamer } from '../utils/audioStreamer'
 
 const router = useRouter()
 
-// State
-const configValid = ref(false)
-const isRecording = ref(false)
-const isTranscribing = ref(false)
-const isPostProcessing = ref(false)
-const error = ref<string | null>(null)
-const lastTranscription = ref<string | null>(null)
-const isStreaming = ref(false)
-const isProgressiveMode = ref(false)
-
-// MediaRecorder for fallback (kept but unused with progressive mode)
-let mediaRecorder: MediaRecorder | null = null
-
-// Audio streamer for Realtime
-let audioStreamer: AudioStreamer | null = null
-
-// Track recording start time to enforce minimum duration
-let recordingStartTime: number | null = null
-const MIN_RECORDING_DURATION_MS = 500 // Minimum 500ms recording
-
-// Provider (to determine if using streaming)
-const provider = computed(() => settingsStore.state.provider)
+// Computed state from recording store
+const isRecording = computed(() => recordingStore.state.isRecording)
+const isTranscribing = computed(() => recordingStore.state.isTranscribing)
+const isPostProcessing = computed(() => recordingStore.state.isPostProcessing)
+const error = computed(() => recordingStore.state.error)
+const lastTranscription = computed(() => recordingStore.state.lastTranscription)
+const configValid = computed(() => recordingStore.state.configValid)
 
 const buttonText = computed(() => {
   if (isPostProcessing.value)
@@ -47,178 +28,8 @@ const canRecord = computed(() => {
   return configValid.value && !isTranscribing.value && !isPostProcessing.value
 })
 
-async function checkConfig() {
-  try {
-    const status = await invoke<StatusResponse>('get_status')
-    configValid.value = status.config_valid
-  }
-  catch (e) {
-    console.error('Failed to get status:', e)
-  }
-}
-
-async function startRecording() {
-  try {
-    error.value = null
-    isRecording.value = true
-    recordingStartTime = Date.now()
-
-    const storeProvider = settingsStore.state.provider
-    const isRealtime = storeProvider === 'openai-realtime' || storeProvider === 'deepgram-realtime'
-
-    // Map realtime providers to their base provider for API key lookup
-    const apiKeyProvider = storeProvider === 'openai-realtime'
-      ? 'openai'
-      : storeProvider === 'deepgram-realtime'
-        ? 'deepgram'
-        : storeProvider
-    const apiKey = settingsStore.state[`${apiKeyProvider}_api_key` as keyof typeof settingsStore.state] as string | null
-
-    if (!apiKey) {
-      throw new Error('No API key configured')
-    }
-
-    if (isRealtime) {
-      // Start streaming transcription
-      isStreaming.value = true
-
-      // Start backend transcription
-      await invoke('transcribe_streaming_start')
-
-      // Start audio streamer
-      audioStreamer = new AudioStreamer({
-        onChunk: async (chunk) => {
-          try {
-            await invoke('transcribe_streaming_send_chunk', {
-              chunk: Array.from(chunk),
-            })
-          }
-          catch (e) {
-            console.error('Failed to send chunk:', e)
-          }
-        },
-        onError: (err) => {
-          console.error('Audio streamer error:', err)
-          error.value = err.message
-          stopRecording()
-        },
-      })
-
-      await audioStreamer.start()
-    }
-    else {
-      // Standard providers: use progressive chunking
-      isProgressiveMode.value = true
-
-      // Start backend progressive recording pipeline
-      await invoke('start_recording')
-
-      // Start audio streamer (same as realtime, but calls progressive API)
-      audioStreamer = new AudioStreamer({
-        onChunk: async (chunk) => {
-          try {
-            await invoke('send_audio_chunk', {
-              samples: Array.from(chunk),
-            })
-          }
-          catch (e) {
-            console.error('Failed to send chunk:', e)
-          }
-        },
-        onError: (err) => {
-          console.error('Audio streamer error:', err)
-          error.value = err.message
-          stopRecording()
-        },
-      })
-
-      await audioStreamer.start()
-    }
-  }
-  catch (e) {
-    console.error('Failed to start recording:', e)
-    if (e instanceof DOMException && e.name === 'NotAllowedError') {
-      error.value = 'Microphone permission denied. Please allow microphone access in your browser/app settings.'
-    }
-    else {
-      error.value = String(e)
-    }
-    resetState()
-  }
-}
-
-async function stopRecording() {
-  // Enforce minimum recording duration to avoid empty/partial transcripts
-  if (recordingStartTime) {
-    const elapsed = Date.now() - recordingStartTime
-    if (elapsed < MIN_RECORDING_DURATION_MS) {
-      const remaining = MIN_RECORDING_DURATION_MS - elapsed
-      await new Promise(resolve => setTimeout(resolve, remaining))
-    }
-    recordingStartTime = null
-  }
-
-  if (isProgressiveMode.value && audioStreamer) {
-    // Stop progressive chunking mode
-    audioStreamer.stop()
-    audioStreamer = null
-    isTranscribing.value = true
-    isRecording.value = false
-
-    // Signal backend to stop and get result - await to prevent race conditions
-    try {
-      await invoke('stop_recording')
-    }
-    catch (e) {
-      console.error('Failed to stop recording:', e)
-      error.value = String(e)
-      resetState()
-    }
-
-    isProgressiveMode.value = false
-  }
-  else if (isStreaming.value && audioStreamer) {
-    // Stop realtime streaming
-    audioStreamer.stop()
-    audioStreamer = null
-    isRecording.value = false
-    isTranscribing.value = true
-
-    // Signal backend to stop - await to prevent race conditions
-    try {
-      await invoke('transcribe_streaming_stop')
-    }
-    catch (e) {
-      console.error('Failed to stop streaming:', e)
-    }
-
-    isStreaming.value = false
-  }
-  else if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    // Stop MediaRecorder (fallback)
-    mediaRecorder.stop()
-    isRecording.value = false
-  }
-  else {
-    isRecording.value = false
-  }
-}
-
-function resetState() {
-  isRecording.value = false
-  isTranscribing.value = false
-  isPostProcessing.value = false
-  isStreaming.value = false
-  isProgressiveMode.value = false
-  mediaRecorder = null
-  recordingStartTime = null
-}
-
-async function copyLastTranscription() {
-  if (lastTranscription.value) {
-    await writeText(lastTranscription.value)
-  }
-}
+// Provider (to watch for changes)
+const provider = computed(() => settingsStore.state.provider)
 
 async function toggleRecording() {
   if (!canRecord.value) {
@@ -228,72 +39,26 @@ async function toggleRecording() {
     return
   }
 
-  if (isRecording.value) {
-    stopRecording()
-  }
-  else {
-    await startRecording()
-  }
+  await recordingStore.toggleRecording()
 }
 
-// Listen for transcription events
-onMounted(async () => {
-  await settingsStore.initialize()
-  await checkConfig()
+async function copyLastTranscription() {
+  await recordingStore.copyLastTranscription()
+}
 
-  // Warm up HTTP client and cloud connections in background (non-blocking)
-  // This reduces latency on the first transcription request
-  invoke('warmup_connections').catch(console.error)
-
-  // Listen for post-processing started event
-  const unlistenPostProcess = await listen('post-processing-started', () => {
-    isTranscribing.value = false
-    isPostProcessing.value = true
-  })
-
-  // Listen for transcription complete event
-  const unlistenComplete = await listen<string>('transcription-complete', (event) => {
-    lastTranscription.value = event.payload
-    resetState()
-  })
-
-  // Listen for transcription error event
-  const unlistenError = await listen<string>('transcription-error', (event) => {
-    error.value = event.payload
-    resetState()
-  })
-
-  // Listen for post-processing warning (post-processing failed, raw text copied)
-  const unlistenWarning = await listen<string>('post-process-warning', (event) => {
-    error.value = `Post-processing failed: ${event.payload}. Raw transcript copied.`
-    // Don't reset state - transcription-complete will handle that
-  })
-
-  // Cleanup on unmount
-  onUnmounted(() => {
-    unlistenPostProcess()
-    unlistenComplete()
-    unlistenError()
-    unlistenWarning()
-
-    if (audioStreamer) {
-      audioStreamer.stop()
-      // If progressive mode was active, also stop the backend
-      if (isProgressiveMode.value) {
-        invoke('stop_recording').catch(console.error)
-      }
-    }
-
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-      mediaRecorder.stop()
-    }
-  })
+// Watch provider changes to update config validity
+watch(provider, async () => {
+  await recordingStore.checkConfig()
 })
 
-// Watch provider changes
-watch(provider, async () => {
-  // Update config validity when provider changes
-  await checkConfig()
+onMounted(async () => {
+  // Re-check config when view mounts
+  await recordingStore.checkConfig()
+})
+
+onUnmounted(() => {
+  // Clear error when leaving the view
+  recordingStore.clearError()
 })
 </script>
 

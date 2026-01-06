@@ -6,4 +6,5 @@ permissions = [
     "allow-is-bubble-visible",
     "allow-request-overlay-permission",
     "allow-has-overlay-permission",
+    "allow-set-bubble-recording",
 ]

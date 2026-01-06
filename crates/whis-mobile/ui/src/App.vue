@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { headerStore } from './stores/header'
+import { recordingStore } from './stores/recording'
 import { settingsStore } from './stores/settings'
 
 const route = useRoute()
 const loaded = computed(() => settingsStore.state.loaded)
+
+// Bubble-click event cleanup
+let unlistenBubbleClick: (() => void) | null = null
 const sidebarOpen = ref(false)
 
 const navItems = [
@@ -35,8 +41,48 @@ watch(() => route.path, () => {
   closeSidebar()
 })
 
-onMounted(() => {
-  settingsStore.initialize()
+onMounted(async () => {
+  await settingsStore.initialize()
+  await recordingStore.initialize()
+
+  // Warm up HTTP client and cloud connections in background
+  invoke('warmup_connections').catch(console.error)
+
+  // Listen for bubble-click events from the floating bubble
+  unlistenBubbleClick = await listen('bubble-click', async () => {
+    console.log('Bubble clicked - toggling recording')
+    const started = await recordingStore.toggleRecording()
+
+    // Update bubble appearance based on recording state
+    try {
+      await invoke('plugin:floating-bubble|set_bubble_recording', {
+        recording: started,
+      })
+    }
+    catch (e) {
+      // Command may not exist yet, ignore
+      console.log('Could not update bubble state:', e)
+    }
+  })
+
+  // Watch recording state to update bubble appearance
+  watch(() => recordingStore.state.isRecording, async (isRecording) => {
+    try {
+      await invoke('plugin:floating-bubble|set_bubble_recording', {
+        recording: isRecording,
+      })
+    }
+    catch (e) {
+      // Command may not exist yet, ignore
+    }
+  })
+})
+
+onUnmounted(() => {
+  if (unlistenBubbleClick) {
+    unlistenBubbleClick()
+  }
+  recordingStore.cleanup()
 })
 </script>
 
