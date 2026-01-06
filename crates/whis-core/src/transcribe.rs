@@ -24,6 +24,42 @@ use crate::provider::{DEFAULT_TIMEOUT_SECS, ProgressCallback, TranscriptionReque
 
 /// Maximum concurrent API requests
 const MAX_CONCURRENT_REQUESTS: usize = 3;
+
+/// Create an HTTP client configured for the current platform.
+///
+/// On mobile (embedded-encoder feature), uses bundled Mozilla CA certificates
+/// to avoid Android's platform verifier JNI initialization issues.
+/// On desktop, uses the default platform certificate verifier.
+fn create_http_client() -> Result<reqwest::Client> {
+    #[cfg(feature = "embedded-encoder")]
+    {
+        // Mobile: Use bundled webpki-roots to avoid Android TLS issues
+        // Build root certificate store from Mozilla's CA bundle
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
+        // Build rustls config with the bundled roots
+        let tls_config = rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
+
+        // Create reqwest client with pre-configured TLS
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+            .use_preconfigured_tls(tls_config)
+            .build()
+            .context("Failed to create HTTP client")
+    }
+
+    #[cfg(not(feature = "embedded-encoder"))]
+    {
+        // Desktop: Use default platform verifier
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+            .build()
+            .context("Failed to create HTTP client")
+    }
+}
 /// Maximum words to search for overlap between chunks
 const MAX_OVERLAP_WORDS: usize = 15;
 
@@ -87,6 +123,32 @@ pub fn transcribe_audio_with_progress(
     Ok(result.text)
 }
 
+/// Transcribe a single audio file with explicit format (async)
+///
+/// Use this version for mobile/environments where blocking HTTP is not supported.
+pub async fn transcribe_audio_async(
+    provider: &TranscriptionProvider,
+    api_key: &str,
+    language: Option<&str>,
+    audio_data: Vec<u8>,
+    mime_type: Option<&str>,
+    filename: Option<&str>,
+) -> Result<String> {
+    let provider_impl = registry().get_by_kind(provider)?;
+    let request = TranscriptionRequest {
+        audio_data,
+        language: language.map(String::from),
+        filename: filename.unwrap_or("audio.mp3").to_string(),
+        mime_type: mime_type.unwrap_or("audio/mpeg").to_string(),
+        progress: None,
+    };
+
+    let client = create_http_client()?;
+
+    let result = provider_impl.transcribe_async(&client, api_key, request).await?;
+    Ok(result.text)
+}
+
 /// Batch transcription for pre-recorded audio (files/stdin)
 ///
 /// Transcribes multiple pre-chunked audio segments in parallel with rate limiting.
@@ -105,11 +167,8 @@ pub async fn batch_transcribe(
 ) -> Result<String> {
     let total_chunks = chunks.len();
 
-    // Create shared HTTP client with timeout
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECS))
-        .build()
-        .context("Failed to create HTTP client")?;
+    // Create shared HTTP client
+    let client = create_http_client()?;
 
     // Semaphore to limit concurrent requests
     let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_REQUESTS));
@@ -321,13 +380,8 @@ pub async fn progressive_transcribe_cloud(
     mut chunk_rx: tokio::sync::mpsc::UnboundedReceiver<ProgressiveChunk>,
     progress_callback: Option<Box<dyn Fn(usize, usize) + Send + Sync>>,
 ) -> Result<String> {
-    // Create shared HTTP client with timeout
-    let client = Arc::new(
-        reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECS))
-            .build()
-            .context("Failed to create HTTP client")?,
-    );
+    // Create shared HTTP client
+    let client = Arc::new(create_http_client()?);
 
     // Semaphore to limit concurrent requests (max 3)
     let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_REQUESTS));

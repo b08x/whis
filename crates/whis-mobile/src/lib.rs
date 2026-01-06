@@ -37,6 +37,36 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             app.manage(AppState::new());
+
+            // Initialize rustls-platform-verifier for Android HTTPS requests
+            // This must be done before any reqwest calls are made
+            // See: https://github.com/tauri-apps/tauri/issues/13267
+            #[cfg(target_os = "android")]
+            {
+                app.get_webview_window("main")
+                    .expect("no main window")
+                    .with_webview(|webview| {
+                        webview.jni_handle().exec(|env, context, _webview| {
+                            let loader = env
+                                .call_method(
+                                    &context,
+                                    "getClassLoader",
+                                    "()Ljava/lang/ClassLoader;",
+                                    &[],
+                                )
+                                .unwrap()
+                                .l()
+                                .unwrap();
+
+                            rustls_platform_verifier::android::init_with_refs(
+                                env.get_java_vm().unwrap(),
+                                env.new_global_ref(&context).unwrap(),
+                                env.new_global_ref(loader).unwrap(),
+                            );
+                        });
+                    })?;
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

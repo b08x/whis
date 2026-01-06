@@ -30,6 +30,24 @@ pub async fn transcribe_audio(
         *recording_state = RecordingState::Transcribing;
     }
 
+    // Run transcription logic, capturing result
+    let result = transcribe_audio_inner(&app, audio_data, mime_type).await;
+
+    // Always reset state, regardless of success or failure
+    {
+        let mut recording_state = state.recording_state.lock().unwrap();
+        *recording_state = RecordingState::Idle;
+    }
+
+    result
+}
+
+/// Inner transcription logic (separated for clean state management).
+async fn transcribe_audio_inner(
+    app: &tauri::AppHandle,
+    audio_data: Vec<u8>,
+    mime_type: String,
+) -> Result<String, String> {
     // Get transcription config from store
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
 
@@ -64,37 +82,28 @@ pub async fn transcribe_audio(
         "audio.mp3"
     };
 
-    // Transcribe
-    let text = tokio::task::spawn_blocking(move || {
-        whis_core::transcribe_audio_with_format(
-            &provider,
-            &api_key,
-            language.as_deref(),
-            audio_data,
-            Some(&mime_type),
-            Some(filename),
-        )
-    })
+    // Transcribe using async API (blocking reqwest doesn't work on Android)
+    let text = whis_core::transcribe_audio_async(
+        &provider,
+        &api_key,
+        language.as_deref(),
+        audio_data,
+        Some(&mime_type),
+        Some(filename),
+    )
     .await
-    .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())?;
 
     // Apply post-processing if enabled (requires active preset + post-processor)
     if is_post_processing_enabled(&store) {
         let _ = app.emit("post-processing-started", ());
     }
-    let final_text = apply_post_processing(&app, text, &store).await;
+    let final_text = apply_post_processing(app, text, &store).await;
 
     // Copy to clipboard using Tauri plugin
     app.clipboard()
         .write_text(&final_text)
         .map_err(|e| e.to_string())?;
-
-    // Reset state
-    {
-        let mut recording_state = state.recording_state.lock().unwrap();
-        *recording_state = RecordingState::Idle;
-    }
 
     Ok(final_text)
 }

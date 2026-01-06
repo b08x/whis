@@ -18,10 +18,10 @@ const isPostProcessing = ref(false)
 const error = ref<string | null>(null)
 const lastTranscription = ref<string | null>(null)
 const isStreaming = ref(false)
+const isProgressiveMode = ref(false)
 
-// MediaRecorder for non-streaming providers
+// MediaRecorder for fallback (kept but unused with progressive mode)
 let mediaRecorder: MediaRecorder | null = null
-let audioChunks: Blob[] = []
 
 // Audio streamer for Realtime
 let audioStreamer: AudioStreamer | null = null
@@ -97,48 +97,32 @@ async function startRecording() {
       await audioStreamer.start()
     }
     else {
-      // Use existing MediaRecorder approach for non-streaming providers
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // Standard providers: use progressive chunking
+      isProgressiveMode.value = true
 
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : MediaRecorder.isTypeSupported('audio/webm')
-          ? 'audio/webm'
-          : MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')
-            ? 'audio/ogg;codecs=opus'
-            : ''
+      // Start backend progressive recording pipeline
+      await invoke('start_recording')
 
-      mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
-      audioChunks = []
+      // Start audio streamer (same as realtime, but calls progressive API)
+      audioStreamer = new AudioStreamer({
+        onChunk: async (chunk) => {
+          try {
+            await invoke('send_audio_chunk', {
+              samples: Array.from(chunk),
+            })
+          }
+          catch (e) {
+            console.error('Failed to send chunk:', e)
+          }
+        },
+        onError: (err) => {
+          console.error('Audio streamer error:', err)
+          error.value = err.message
+          stopRecording()
+        },
+      })
 
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunks.push(event.data)
-        }
-      }
-
-      mediaRecorder.onstop = async () => {
-        stream.getTracks().forEach(track => track.stop())
-
-        if (audioChunks.length === 0) {
-          error.value = 'No audio recorded'
-          resetState()
-          return
-        }
-
-        isTranscribing.value = true
-        const audioBlob = new Blob(audioChunks, { type: mediaRecorder?.mimeType || 'audio/webm' })
-        await transcribeAudio(audioBlob)
-      }
-
-      mediaRecorder.onerror = (event) => {
-        console.error('MediaRecorder error:', event)
-        error.value = 'Recording error occurred'
-        resetState()
-        stream.getTracks().forEach(track => track.stop())
-      }
-
-      mediaRecorder.start()
+      await audioStreamer.start()
     }
   }
   catch (e) {
@@ -154,8 +138,24 @@ async function startRecording() {
 }
 
 function stopRecording() {
-  if (isStreaming.value && audioStreamer) {
-    // Stop streaming
+  if (isProgressiveMode.value && audioStreamer) {
+    // Stop progressive chunking mode
+    audioStreamer.stop()
+    audioStreamer = null
+    isTranscribing.value = true
+
+    // Signal backend to stop and get result
+    invoke('stop_recording')
+      .catch((e) => {
+        console.error('Failed to stop recording:', e)
+        error.value = String(e)
+        resetState()
+      })
+
+    isProgressiveMode.value = false
+  }
+  else if (isStreaming.value && audioStreamer) {
+    // Stop realtime streaming
     audioStreamer.stop()
     audioStreamer = null
 
@@ -166,31 +166,11 @@ function stopRecording() {
     isTranscribing.value = true
   }
   else if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    // Stop MediaRecorder
+    // Stop MediaRecorder (fallback)
     mediaRecorder.stop()
   }
 
   isRecording.value = false
-}
-
-async function transcribeAudio(audioBlob: Blob) {
-  try {
-    const arrayBuffer = await audioBlob.arrayBuffer()
-    const audioData = Array.from(new Uint8Array(arrayBuffer))
-
-    const text = await invoke<string>('transcribe_audio', {
-      audioData,
-      mimeType: audioBlob.type || 'audio/webm',
-    })
-
-    lastTranscription.value = text
-  }
-  catch (e) {
-    error.value = String(e)
-  }
-  finally {
-    resetState()
-  }
 }
 
 function resetState() {
@@ -198,8 +178,8 @@ function resetState() {
   isTranscribing.value = false
   isPostProcessing.value = false
   isStreaming.value = false
+  isProgressiveMode.value = false
   mediaRecorder = null
-  audioChunks = []
 }
 
 async function copyLastTranscription() {
@@ -255,6 +235,10 @@ onMounted(async () => {
 
     if (audioStreamer) {
       audioStreamer.stop()
+      // If progressive mode was active, also stop the backend
+      if (isProgressiveMode.value) {
+        invoke('stop_recording').catch(console.error)
+      }
     }
 
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {

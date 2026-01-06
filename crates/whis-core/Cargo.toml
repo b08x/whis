@@ -29,6 +29,10 @@ base64 = { version = "0.22", optional = true }
 # Embedded MP3 encoder for mobile (no FFmpeg dependency)
 mp3lame-encoder = { version = "0.2", optional = true }
 
+# Mobile TLS: Use bundled Mozilla CA certs (avoids Android platform verifier JNI issues)
+webpki-roots = { version = "1", optional = true }
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12"], optional = true }
+
 # Real-time resampling to 16kHz (always enabled - benefits all providers)
 rubato = "1.0"
 audioadapter = "2.0"
@@ -56,8 +60,8 @@ default = ["ffmpeg", "clipboard", "local-transcription", "vad", "realtime"]
 # Desktop: use FFmpeg process for audio encoding and arboard for clipboard
 ffmpeg = ["hound"]
 clipboard = ["arboard"]
-# Mobile: use embedded mp3lame encoder (no external process needed)
-embedded-encoder = ["mp3lame-encoder"]
+# Mobile: use embedded mp3lame encoder + bundled TLS certs (no external process needed)
+embedded-encoder = ["mp3lame-encoder", "webpki-roots", "rustls"]
 # Local transcription (Whisper + Parakeet via transcribe-rs)
 local-transcription = ["minimp3", "transcribe-rs", "tar", "flate2", "tempfile", "libc"]
 # Voice Activity Detection to skip silence during recording

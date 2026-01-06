@@ -46,7 +46,7 @@ pub use settings::Settings;
 pub use state::RecordingState;
 pub use transcribe::{
     ChunkTranscription, batch_transcribe, progressive_transcribe_cloud, transcribe_audio,
-    transcribe_audio_with_format, transcribe_audio_with_progress,
+    transcribe_audio_async, transcribe_audio_with_format, transcribe_audio_with_progress,
 };
 #[cfg(feature = "local-transcription")]
 pub use transcribe::{LocalAudioChunk, progressive_transcribe_local};

@@ -7298,6 +7298,7 @@ dependencies = [
  "once_cell",
  "reqwest 0.13.1",
  "rubato",
+ "rustls",
  "serde",
  "serde_json",
  "tar",
@@ -7307,6 +7308,7 @@ dependencies = [
  "tokio-tungstenite",
  "transcribe-rs",
  "voice_activity_detector",
+ "webpki-roots 1.0.5",
 ]
 
 [[package]]
@@ -7336,6 +7338,8 @@ name = "whis-mobile"
 version = "0.6.4"
 dependencies = [
  "anyhow",
+ "jni",
+ "rustls-platform-verifier",
  "serde",
  "serde_json",
  "tauri",
