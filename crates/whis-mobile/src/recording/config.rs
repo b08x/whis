@@ -3,6 +3,7 @@
 //! This module handles loading and caching transcription configuration,
 //! mirroring the pattern used in whis-desktop's recording/config.rs.
 
+use super::provider::api_key_store_key;
 use crate::state::{AppState, TranscriptionConfig};
 use tauri_plugin_store::StoreExt;
 use whis_core::config::TranscriptionProvider;
@@ -37,16 +38,10 @@ pub fn load_transcription_config(
         provider_str.parse().unwrap_or(whis_core::DEFAULT_PROVIDER);
 
     // Get API key based on provider
-    let api_key = match provider_str.as_str() {
-        "openai" | "openai-realtime" => store.get("openai_api_key"),
-        "mistral" => store.get("mistral_api_key"),
-        "groq" => store.get("groq_api_key"),
-        "deepgram" => store.get("deepgram_api_key"),
-        "elevenlabs" => store.get("elevenlabs_api_key"),
-        _ => None,
-    }
-    .and_then(|v| v.as_str().map(String::from))
-    .ok_or_else(|| format!("No API key configured for provider: {}", provider_str))?;
+    let api_key = api_key_store_key(&provider_str)
+        .and_then(|key| store.get(key))
+        .and_then(|v| v.as_str().map(String::from))
+        .ok_or_else(|| format!("No API key configured for provider: {}", provider_str))?;
 
     let language: Option<String> = store
         .get("language")

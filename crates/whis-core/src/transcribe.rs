@@ -145,7 +145,9 @@ pub async fn transcribe_audio_async(
 
     let client = create_http_client()?;
 
-    let result = provider_impl.transcribe_async(&client, api_key, request).await?;
+    let result = provider_impl
+        .transcribe_async(&client, api_key, request)
+        .await?;
     Ok(result.text)
 }
 

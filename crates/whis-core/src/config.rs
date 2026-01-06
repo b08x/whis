@@ -59,15 +59,15 @@ impl TranscriptionProvider {
         }
     }
 
-    /// List all available providers
+    /// List all available providers (ordered by recommendation)
     pub fn all() -> &'static [TranscriptionProvider] {
         &[
+            TranscriptionProvider::Deepgram,
+            TranscriptionProvider::DeepgramRealtime,
             TranscriptionProvider::OpenAI,
             TranscriptionProvider::OpenAIRealtime,
             TranscriptionProvider::Mistral,
             TranscriptionProvider::Groq,
-            TranscriptionProvider::Deepgram,
-            TranscriptionProvider::DeepgramRealtime,
             TranscriptionProvider::ElevenLabs,
             TranscriptionProvider::LocalWhisper,
             TranscriptionProvider::LocalParakeet,

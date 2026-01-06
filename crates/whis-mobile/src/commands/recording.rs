@@ -4,12 +4,13 @@
 //! Business logic is delegated to the `recording` module.
 
 use crate::recording::pipeline::{apply_post_processing, is_post_processing_enabled};
+use crate::recording::provider::api_key_store_key;
 use crate::state::{AppState, RecordingState};
 use tauri::{Emitter, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_store::StoreExt;
-use whis_core::OpenAIRealtimeProvider;
 use whis_core::config::TranscriptionProvider;
+use whis_core::{DeepgramRealtimeProvider, OpenAIRealtimeProvider};
 
 // ========== Batch Transcription ==========
 
@@ -59,13 +60,10 @@ async fn transcribe_audio_inner(
     let provider: TranscriptionProvider =
         provider_str.parse().unwrap_or(whis_core::DEFAULT_PROVIDER);
 
-    let api_key = match provider_str.as_str() {
-        "openai" | "openai-realtime" => store.get("openai_api_key"),
-        "mistral" => store.get("mistral_api_key"),
-        _ => None,
-    }
-    .and_then(|v| v.as_str().map(String::from))
-    .ok_or("No API key configured")?;
+    let api_key = api_key_store_key(&provider_str)
+        .and_then(|key| store.get(key))
+        .and_then(|v| v.as_str().map(String::from))
+        .ok_or("No API key configured")?;
 
     let language: Option<String> = store
         .get("language")
@@ -127,13 +125,10 @@ pub async fn transcribe_streaming_start(
         .and_then(|v| v.as_str().map(String::from))
         .unwrap_or_else(|| "openai".to_string());
 
-    let api_key = if provider_str == "openai-realtime" || provider_str == "openai" {
-        store.get("openai_api_key")
-    } else {
-        None
-    }
-    .and_then(|v| v.as_str().map(String::from))
-    .ok_or("No OpenAI API key configured")?;
+    let api_key = api_key_store_key(&provider_str)
+        .and_then(|key| store.get(key))
+        .and_then(|v| v.as_str().map(String::from))
+        .ok_or_else(|| format!("No API key configured for {}", provider_str))?;
 
     // Set state to transcribing
     {
@@ -158,8 +153,23 @@ pub async fn transcribe_streaming_start(
     // Spawn transcription task
     let recording_state_arc = state.recording_state.clone();
     let realtime_tx_arc = state.realtime_audio_tx.clone();
+    let provider_for_task = provider_str.clone();
     tokio::spawn(async move {
-        match OpenAIRealtimeProvider::transcribe_stream(&api_key, audio_rx, language).await {
+        // Dispatch to correct streaming provider
+        let result = match provider_for_task.as_str() {
+            "openai" | "openai-realtime" => {
+                OpenAIRealtimeProvider::transcribe_stream(&api_key, audio_rx, language).await
+            }
+            "deepgram" | "deepgram-realtime" => {
+                DeepgramRealtimeProvider::transcribe_stream(&api_key, audio_rx, language).await
+            }
+            _ => Err(anyhow::anyhow!(
+                "Streaming not supported for {}",
+                provider_for_task
+            )),
+        };
+
+        match result {
             Ok(transcript) => {
                 // Apply post-processing if enabled
                 let final_text = if let Ok(store) = app.store("settings.json") {

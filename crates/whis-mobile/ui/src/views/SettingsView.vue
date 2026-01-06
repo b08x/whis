@@ -8,12 +8,12 @@ import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { presetsStore } from '../stores/presets'
 import { settingsStore } from '../stores/settings'
 
-// Provider options (expanded)
+// Provider options (ordered by recommendation)
 const providerOptions: SelectOption[] = [
+  { value: 'deepgram', label: 'Deepgram' },
   { value: 'openai', label: 'OpenAI Whisper' },
   { value: 'mistral', label: 'Mistral Voxtral' },
   { value: 'groq', label: 'Groq' },
-  { value: 'deepgram', label: 'Deepgram' },
   { value: 'elevenlabs', label: 'ElevenLabs' },
 ]
 
@@ -98,9 +98,35 @@ const isStreamingEnabled = computed({
   },
 })
 
-// Normalize provider for display (openai-realtime shows as openai)
+// Deepgram streaming method
+const deepgramMethod = computed<TranscriptionMethod>({
+  get: () => provider.value === 'deepgram-realtime' ? 'streaming' : 'standard',
+  set: (val) => {
+    const newProvider = val === 'streaming' ? 'deepgram-realtime' : 'deepgram'
+    settingsStore.setProvider(newProvider)
+  },
+})
+
+// Show streaming toggle for Deepgram
+const showDeepgramStreamingToggle = computed(() => {
+  return provider.value === 'deepgram' || provider.value === 'deepgram-realtime'
+})
+
+// Deepgram streaming toggle state
+const isDeepgramStreamingEnabled = computed({
+  get: () => deepgramMethod.value === 'streaming',
+  set: (value: boolean) => {
+    deepgramMethod.value = value ? 'streaming' : 'standard'
+  },
+})
+
+// Normalize provider for display (realtime variants show as base provider)
 const displayProvider = computed<Provider>(() => {
-  return provider.value === 'openai-realtime' ? 'openai' : provider.value
+  if (provider.value === 'openai-realtime')
+    return 'openai'
+  if (provider.value === 'deepgram-realtime')
+    return 'deepgram'
+  return provider.value
 })
 
 // Post-processor binding
@@ -192,7 +218,7 @@ onMounted(() => {
       </div>
 
       <!-- Deepgram API Key -->
-      <div v-if="provider === 'deepgram'" class="field">
+      <div v-if="provider === 'deepgram' || provider === 'deepgram-realtime'" class="field">
         <label>deepgram api key</label>
         <AppInput
           v-model="deepgramApiKey"
@@ -201,6 +227,23 @@ onMounted(() => {
         />
         <span class="hint">
           Get your key at <span class="link" @click="openUrl('https://console.deepgram.com')">console.deepgram.com</span>
+        </span>
+      </div>
+
+      <!-- Streaming Toggle (Deepgram) -->
+      <div v-if="showDeepgramStreamingToggle" class="field streaming-field">
+        <label>streaming mode</label>
+        <div class="field-row">
+          <ToggleSwitch v-model="isDeepgramStreamingEnabled" />
+          <span class="method-description">
+            {{ deepgramMethod === 'streaming' ? 'Real-time' : 'Standard' }}
+          </span>
+        </div>
+        <span v-if="deepgramMethod === 'streaming'" class="hint">
+          Lower latency via WebSocket. Transcription begins as you speak.
+        </span>
+        <span v-else class="hint">
+          Upload audio after recording. More reliable for longer recordings.
         </span>
       </div>
 

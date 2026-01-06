@@ -29,6 +29,8 @@ pub use ollama_manager::{clear_warmup_cache, preload_ollama};
 pub use post_processing::{DEFAULT_POST_PROCESSING_PROMPT, PostProcessor, post_process};
 pub use preset::{Preset, PresetSource};
 #[cfg(feature = "realtime")]
+pub use provider::DeepgramRealtimeProvider;
+#[cfg(feature = "realtime")]
 pub use provider::OpenAIRealtimeProvider;
 #[cfg(feature = "local-transcription")]
 pub use provider::preload_parakeet;

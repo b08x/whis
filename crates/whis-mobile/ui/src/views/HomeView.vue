@@ -59,9 +59,14 @@ async function startRecording() {
     isRecording.value = true
 
     const storeProvider = settingsStore.state.provider
-    const isRealtime = storeProvider === 'openai-realtime'
+    const isRealtime = storeProvider === 'openai-realtime' || storeProvider === 'deepgram-realtime'
 
-    const apiKeyProvider = isRealtime ? 'openai' : storeProvider
+    // Map realtime providers to their base provider for API key lookup
+    const apiKeyProvider = storeProvider === 'openai-realtime'
+      ? 'openai'
+      : storeProvider === 'deepgram-realtime'
+        ? 'deepgram'
+        : storeProvider
     const apiKey = settingsStore.state[`${apiKeyProvider}_api_key` as keyof typeof settingsStore.state] as string | null
 
     if (!apiKey) {

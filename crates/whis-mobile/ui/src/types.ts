@@ -6,7 +6,7 @@ export interface SelectOption<T = string | null> {
 }
 
 // Mobile transcription providers
-export type Provider = 'openai' | 'openai-realtime' | 'mistral' | 'groq' | 'deepgram' | 'elevenlabs'
+export type Provider = 'openai' | 'openai-realtime' | 'mistral' | 'groq' | 'deepgram' | 'deepgram-realtime' | 'elevenlabs'
 
 // OpenAI transcription method
 export type TranscriptionMethod = 'standard' | 'streaming'

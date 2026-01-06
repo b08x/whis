@@ -4,7 +4,7 @@ import { reactive, readonly } from 'vue'
 
 // Internal mutable state for reactive UI
 const state = reactive({
-  provider: 'openai' as Provider,
+  provider: 'deepgram' as Provider,
   language: null as string | null,
   openai_api_key: null as string | null,
   mistral_api_key: null as string | null,
@@ -23,7 +23,7 @@ async function getStore(): Promise<Store> {
     store = await Store.load('settings.json', {
       autoSave: 500,
       defaults: {
-        provider: 'openai',
+        provider: 'deepgram',
         language: null,
         openai_api_key: null,
         mistral_api_key: null,
@@ -43,7 +43,7 @@ async function initialize() {
     const s = await getStore()
 
     // Load values from store
-    state.provider = (await s.get<Provider>('provider')) || 'openai'
+    state.provider = (await s.get<Provider>('provider')) || 'deepgram'
     state.language = (await s.get<string | null>('language')) ?? null
     state.openai_api_key = (await s.get<string | null>('openai_api_key')) ?? null
     state.mistral_api_key = (await s.get<string | null>('mistral_api_key')) ?? null

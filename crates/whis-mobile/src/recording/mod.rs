@@ -7,6 +7,8 @@
 //!
 //! - `config` - Load transcription configuration from Tauri store
 //! - `pipeline` - Post-processing, clipboard, and event handling
+//! - `provider` - Provider API key lookup and validation helpers
 
 pub mod config;
 pub mod pipeline;
+pub mod provider;

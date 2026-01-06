@@ -1,5 +1,6 @@
 //! System status and validation commands.
 
+use crate::recording::provider::{api_key_store_key, validate_api_key_format};
 use crate::state::{AppState, RecordingState};
 use tauri::State;
 use tauri_plugin_store::StoreExt;
@@ -26,13 +27,9 @@ pub fn get_status(app: tauri::AppHandle, state: State<'_, AppState>) -> StatusRe
                 .and_then(|v| v.as_str().map(String::from))
                 .unwrap_or_else(|| whis_core::DEFAULT_PROVIDER.as_str().to_string());
 
-            let key = match provider.as_str() {
-                "openai" | "openai-realtime" => store.get("openai_api_key"),
-                "mistral" => store.get("mistral_api_key"),
-                _ => None,
-            };
-
-            key.and_then(|v| v.as_str().map(|s| !s.is_empty()))
+            api_key_store_key(&provider)
+                .and_then(|key| store.get(key))
+                .and_then(|v| v.as_str().map(|s| !s.is_empty()))
         })
         .unwrap_or(false);
 
@@ -45,9 +42,5 @@ pub fn get_status(app: tauri::AppHandle, state: State<'_, AppState>) -> StatusRe
 /// Validate API key format for a given provider.
 #[tauri::command]
 pub fn validate_api_key(key: String, provider: String) -> bool {
-    match provider.as_str() {
-        "openai" | "openai-realtime" => key.starts_with("sk-") && key.len() > 20,
-        "mistral" => key.len() > 20,
-        _ => false,
-    }
+    validate_api_key_format(&key, &provider)
 }

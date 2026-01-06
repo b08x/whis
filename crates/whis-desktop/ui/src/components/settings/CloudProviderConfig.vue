@@ -20,12 +20,12 @@ const keyMasked = ref<Record<string, boolean>>({
   elevenlabs: true,
 })
 
-// Cloud provider options with metadata
+// Cloud provider options with metadata (ordered by recommendation)
 const cloudProviders: CloudProviderInfo[] = [
+  { value: 'deepgram', label: 'Deepgram', desc: 'Real-time optimized', keyUrl: 'https://console.deepgram.com', placeholder: '...' },
   { value: 'openai', label: 'OpenAI', desc: 'Industry standard, excellent accuracy', keyUrl: 'https://platform.openai.com/api-keys', placeholder: 'sk-...' },
   { value: 'mistral', label: 'Mistral', desc: 'European AI, multilingual support', keyUrl: 'https://console.mistral.ai/api-keys', placeholder: '...' },
   { value: 'groq', label: 'Groq', desc: 'Ultra-fast inference', keyUrl: 'https://console.groq.com/keys', placeholder: 'gsk_...' },
-  { value: 'deepgram', label: 'Deepgram', desc: 'Real-time optimized', keyUrl: 'https://console.deepgram.com', placeholder: '...' },
   { value: 'elevenlabs', label: 'ElevenLabs', desc: 'Best for voice projects', keyUrl: 'https://elevenlabs.io/app/settings/api-keys', placeholder: '...' },
 ]
 
