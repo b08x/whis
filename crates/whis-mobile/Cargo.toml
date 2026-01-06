@@ -25,6 +25,7 @@ tauri = { version = "2.9", features = [] }
 tauri-plugin-clipboard-manager = "2.3"
 tauri-plugin-opener = "2"
 tauri-plugin-store = "2"
+tauri-plugin-floating-bubble = { path = "../tauri-plugin-floating-bubble" }
 
 # Android TLS: Initialize rustls-platform-verifier via JNI
 # See: https://github.com/tauri-apps/tauri/issues/13267

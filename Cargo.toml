@@ -1,6 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["crates/whis-core", "crates/whis-cli", "crates/whis-desktop", "crates/whis-mobile", "crates/whis-screenshots"]
+members = [
+    "crates/whis-core",
+    "crates/whis-cli",
+    "crates/whis-desktop",
+    "crates/whis-mobile",
+    "crates/whis-screenshots",
+    "crates/tauri-plugin-floating-bubble",
+]
 
 [workspace.package]
 version = "0.6.4"

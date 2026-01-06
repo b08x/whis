@@ -35,6 +35,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_floating_bubble::init())
         .setup(|app| {
             app.manage(AppState::new());
 

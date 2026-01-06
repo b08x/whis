@@ -5977,6 +5977,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-plugin-floating-bubble"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "tauri-plugin-global-shortcut"
 version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7345,6 +7357,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",
+ "tauri-plugin-floating-bubble",
  "tauri-plugin-opener",
  "tauri-plugin-store",
  "tokio",

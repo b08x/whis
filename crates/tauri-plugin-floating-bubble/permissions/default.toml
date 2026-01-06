@@ -1,0 +1,9 @@
+[default]
+description = "Default permissions for the floating bubble plugin"
+permissions = [
+    "allow-show-bubble",
+    "allow-hide-bubble",
+    "allow-is-bubble-visible",
+    "allow-request-overlay-permission",
+    "allow-has-overlay-permission",
+]

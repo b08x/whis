@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-is-bubble-visible"
+description = "Enables the is_bubble_visible command without any pre-configured scope."
+commands.allow = ["is_bubble_visible"]
+
+[[permission]]
+identifier = "deny-is-bubble-visible"
+description = "Denies the is_bubble_visible command without any pre-configured scope."
+commands.deny = ["is_bubble_visible"]
