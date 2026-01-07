@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Floating Bubble Demo</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <main class="container">
+      <h1>Floating Bubble Demo</h1>
+      <p class="subtitle">tauri-plugin-floating-bubble example</p>
+
+      <div class="status-card">
+        <div class="status-row">
+          <span class="status-label">Overlay Permission:</span>
+          <span id="permission-status" class="status-value">Checking...</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Bubble Visible:</span>
+          <span id="bubble-status" class="status-value">No</span>
+        </div>
+      </div>
+
+      <div class="button-group">
+        <button id="btn-permission" class="btn btn-secondary">
+          Request Permission
+        </button>
+        <button id="btn-show" class="btn btn-primary">
+          Show Bubble
+        </button>
+        <button id="btn-hide" class="btn btn-danger">
+          Hide Bubble
+        </button>
+      </div>
+
+      <div class="state-section">
+        <h3>Change Bubble State</h3>
+        <div class="state-buttons">
+          <button id="btn-state-idle" class="btn btn-state">Idle</button>
+          <button id="btn-state-recording" class="btn btn-state">Recording</button>
+          <button id="btn-state-processing" class="btn btn-state">Processing</button>
+        </div>
+      </div>
+
+      <div id="log" class="log-area">
+        <p class="log-title">Event Log:</p>
+      </div>
+    </main>
+  </body>
+</html>

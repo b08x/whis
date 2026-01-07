@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/android-schema.json",
+  "identifier": "default",
+  "description": "Default capabilities for the Android app",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "floating-bubble:default"
+  ]
+}

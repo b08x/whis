@@ -10,6 +10,10 @@ A Tauri plugin for displaying floating bubble overlays on Android. Perfect for v
 | macOS    | ✗         |
 | Linux    | ✗         |
 
+## Example
+
+See the [floating-bubble-android-demo](./examples/floating-bubble-android-demo) for a complete, self-contained example that you can build and run on your Android device.
+
 ## Install
 
 Install the Core plugin by adding the following to your `Cargo.toml` file:

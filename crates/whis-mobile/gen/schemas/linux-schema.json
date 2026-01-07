@@ -2391,10 +2391,10 @@
           "markdownDescription": "Denies the unminimize command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the floating bubble plugin\n#### This default permission set includes:\n\n- `allow-show-bubble`\n- `allow-hide-bubble`\n- `allow-is-bubble-visible`\n- `allow-request-overlay-permission`\n- `allow-has-overlay-permission`\n- `allow-set-bubble-recording`",
+          "description": "Default permissions for floating bubble plugin\n#### This default permission set includes:\n\n- `allow-show-bubble`\n- `allow-hide-bubble`\n- `allow-is-bubble-visible`\n- `allow-request-overlay-permission`\n- `allow-has-overlay-permission`\n- `allow-set-bubble-state`",
           "type": "string",
           "const": "floating-bubble:default",
-          "markdownDescription": "Default permissions for the floating bubble plugin\n#### This default permission set includes:\n\n- `allow-show-bubble`\n- `allow-hide-bubble`\n- `allow-is-bubble-visible`\n- `allow-request-overlay-permission`\n- `allow-has-overlay-permission`\n- `allow-set-bubble-recording`"
+          "markdownDescription": "Default permissions for floating bubble plugin\n#### This default permission set includes:\n\n- `allow-show-bubble`\n- `allow-hide-bubble`\n- `allow-is-bubble-visible`\n- `allow-request-overlay-permission`\n- `allow-has-overlay-permission`\n- `allow-set-bubble-state`"
         },
         {
           "description": "Enables the has_overlay_permission command without any pre-configured scope.",
@@ -2425,6 +2425,12 @@
           "type": "string",
           "const": "floating-bubble:allow-set-bubble-recording",
           "markdownDescription": "Enables the set_bubble_recording command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_bubble_state command without any pre-configured scope.",
+          "type": "string",
+          "const": "floating-bubble:allow-set-bubble-state",
+          "markdownDescription": "Enables the set_bubble_state command without any pre-configured scope."
         },
         {
           "description": "Enables the show_bubble command without any pre-configured scope.",
@@ -2461,6 +2467,12 @@
           "type": "string",
           "const": "floating-bubble:deny-set-bubble-recording",
           "markdownDescription": "Denies the set_bubble_recording command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_bubble_state command without any pre-configured scope.",
+          "type": "string",
+          "const": "floating-bubble:deny-set-bubble-state",
+          "markdownDescription": "Denies the set_bubble_state command without any pre-configured scope."
         },
         {
           "description": "Denies the show_bubble command without any pre-configured scope.",
