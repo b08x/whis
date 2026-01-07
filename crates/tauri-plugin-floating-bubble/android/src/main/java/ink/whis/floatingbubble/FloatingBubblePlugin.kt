@@ -19,14 +19,15 @@ import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 
 /**
- * Color configuration for bubble states.
+ * Configuration for a specific bubble state.
  */
 @InvokeArg
-class ColorsOptions {
-    var background: String? = null
-    var idle: String? = null
-    var recording: String? = null
-    var processing: String? = null
+class StateConfig {
+    /**
+     * Icon resource name for this state (optional).
+     * If not provided, uses the default icon.
+     */
+    var iconResourceName: String? = null
 }
 
 /**
@@ -38,16 +39,8 @@ class BubbleOptions {
     var startX: Int = 0
     var startY: Int = 100
     var iconResourceName: String? = null
-    var colors: ColorsOptions? = null
-}
-
-/**
- * Options for setting recording state.
- * @deprecated Use StateOptions instead
- */
-@InvokeArg
-class RecordingOptions {
-    var recording: Boolean = false
+    var background: String = "#1C1C1C"
+    var states: Map<String, StateConfig>? = null
 }
 
 /**
@@ -135,20 +128,9 @@ class FloatingBubblePlugin(private val activity: Activity) : Plugin(activity) {
             FloatingBubbleService.bubbleSize = args.size
             FloatingBubbleService.bubbleStartX = args.startX
             FloatingBubbleService.bubbleStartY = args.startY
-            FloatingBubbleService.iconResourceName = args.iconResourceName
-            
-            // Parse colors if provided
-            val colorsOpts = args.colors
-            if (colorsOpts != null) {
-                FloatingBubbleService.colors = BubbleColors(
-                    background = parseColor(colorsOpts.background, "#1C1C1C"),
-                    idle = parseColor(colorsOpts.idle, "#FFFFFF"),
-                    recording = parseColor(colorsOpts.recording, "#FF4444"),
-                    processing = parseColor(colorsOpts.processing, "#FFD633")
-                )
-            } else {
-                FloatingBubbleService.colors = BubbleColors()
-            }
+            FloatingBubbleService.defaultIconResourceName = args.iconResourceName
+            FloatingBubbleService.backgroundColor = Color.parseColor(args.background)
+            FloatingBubbleService.stateConfigs = args.states ?: emptyMap()
 
             // Start the floating bubble service
             val intent = Intent(activity, FloatingBubbleService::class.java)
@@ -239,29 +221,12 @@ class FloatingBubblePlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     /**
-     * Update the bubble's visual state to indicate recording.
-     * @deprecated Use setBubbleState instead
-     */
-    @Command
-    fun setBubbleRecording(invoke: Invoke) {
-        val args = invoke.parseArgs(RecordingOptions::class.java)
-        
-        try {
-            FloatingBubbleService.setRecordingState(args.recording)
-            invoke.resolve()
-        } catch (e: Exception) {
-            invoke.reject("Failed to update bubble state: ${e.message}")
-        }
-    }
-
-    /**
      * Update the bubble's visual state.
-     * Valid states: "idle", "recording", "processing"
      */
     @Command
     fun setBubbleState(invoke: Invoke) {
         val args = invoke.parseArgs(StateOptions::class.java)
-        
+
         try {
             Log.d(TAG, "setBubbleState command received, state: ${args.state}")
             FloatingBubbleService.setState(args.state)

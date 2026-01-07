@@ -1,44 +1,14 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
-/// Color configuration for bubble states.
+/// Configuration for a specific bubble state.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-pub struct BubbleColors {
-    /// Background color (hex string, e.g., "#1C1C1C").
-    /// Default: "#1C1C1C" (dark)
-    #[serde(default = "default_background_color")]
-    pub background: String,
-
-    /// Icon color for idle state (hex string).
-    /// Default: "#FFFFFF" (white)
-    #[serde(default = "default_idle_color")]
-    pub idle: String,
-
-    /// Icon color for recording state (hex string).
-    /// Default: "#FF4444" (red)
-    #[serde(default = "default_recording_color")]
-    pub recording: String,
-
-    /// Icon color for processing state (hex string).
-    /// Default: "#FFD633" (gold)
-    #[serde(default = "default_processing_color")]
-    pub processing: String,
-}
-
-fn default_background_color() -> String {
-    "#1C1C1C".to_string()
-}
-
-fn default_idle_color() -> String {
-    "#FFFFFF".to_string()
-}
-
-fn default_recording_color() -> String {
-    "#FF4444".to_string()
-}
-
-fn default_processing_color() -> String {
-    "#FFD633".to_string()
+pub struct StateConfig {
+    /// Icon resource name for this state (optional).
+    /// If not provided, uses the default icon from BubbleOptions.
+    /// Example: "ic_recording"
+    pub icon_resource_name: Option<String>,
 }
 
 /// Options for configuring the floating bubble.
@@ -60,15 +30,23 @@ pub struct BubbleOptions {
     #[serde(default = "default_start_y")]
     pub start_y: i32,
 
-    /// Android drawable resource name for the icon (without "R.drawable." prefix).
+    /// Default icon resource name (used when no state-specific icon is provided).
+    /// Android drawable resource name (without "R.drawable." prefix).
     /// If not specified, uses the plugin's default icon.
     /// Example: "ic_my_app_logo"
     #[serde(default)]
     pub icon_resource_name: Option<String>,
 
-    /// Color configuration for different bubble states.
+    /// Background color (hex string, e.g., "#1C1C1C").
+    /// Default: "#1C1C1C" (dark)
+    #[serde(default = "default_background_color")]
+    pub background: String,
+
+    /// State configuration mapping.
+    /// Keys are arbitrary state names, values define icon for that state.
+    /// Example: { "idle": { iconResourceName: "ic_idle" }, "active": { iconResourceName: "ic_active" } }
     #[serde(default)]
-    pub colors: Option<BubbleColors>,
+    pub states: HashMap<String, StateConfig>,
 }
 
 fn default_size() -> i32 {
@@ -77,6 +55,10 @@ fn default_size() -> i32 {
 
 fn default_start_y() -> i32 {
     100
+}
+
+fn default_background_color() -> String {
+    "#1C1C1C".to_string()
 }
 
 /// Response from visibility check.
@@ -93,16 +75,10 @@ pub struct PermissionResponse {
     pub granted: bool,
 }
 
-/// Options for setting recording state.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RecordingOptions {
-    pub recording: bool,
-}
-
 /// Options for setting bubble state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StateOptions {
+    /// The state name to set. Must be a key in the states map provided to showBubble.
     pub state: String,
 }

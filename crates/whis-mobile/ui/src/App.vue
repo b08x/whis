@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { invoke } from '@tauri-apps/api/core'
-import type { BubbleState } from 'tauri-plugin-floating-bubble'
 import { onBubbleClick, setBubbleState } from 'tauri-plugin-floating-bubble'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -40,9 +39,11 @@ function closeSidebar() {
 /**
  * Determine the bubble state based on recording store state.
  */
-function getBubbleState(): BubbleState {
-  if (recordingStore.state.isRecording) return 'recording'
-  if (recordingStore.state.isTranscribing || recordingStore.state.isPostProcessing) return 'processing'
+function getBubbleState(): string {
+  if (recordingStore.state.isRecording)
+    return 'recording'
+  if (recordingStore.state.isTranscribing || recordingStore.state.isPostProcessing)
+    return 'processing'
   return 'idle'
 }
 
@@ -50,7 +51,6 @@ function getBubbleState(): BubbleState {
  * Update bubble visual state (safe - catches errors if plugin unavailable).
  */
 async function updateBubbleState() {
-  console.log('[FloatingBubble] updateBubbleState called, state:', getBubbleState())
   try {
     await setBubbleState(getBubbleState())
   }

@@ -1,39 +1,64 @@
 import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
 
 /**
- * Color configuration for bubble states.
- * All colors are hex strings (e.g., "#FF4444").
+ * Configuration for a specific bubble state.
  */
-export interface BubbleColors {
-  /** Background color. Default: "#1C1C1C" (dark) */
-  background?: string
-  /** Icon color for idle state. Default: "#FFFFFF" (white) */
-  idle?: string
-  /** Icon color for recording state. Default: "#FF4444" (red) */
-  recording?: string
-  /** Icon color for processing state. Default: "#FFD633" (gold) */
-  processing?: string
+export interface StateConfig {
+  /**
+   * Icon resource name for this state (optional).
+   * If not provided, uses the default icon from BubbleOptions.
+   * Android drawable resource name (without "R.drawable." prefix).
+   * Example: "ic_recording"
+   */
+  iconResourceName?: string
 }
 
 /**
  * Options for configuring the floating bubble.
  */
 export interface BubbleOptions {
-  /** Size of the bubble in dp. Default: 60 */
-  size?: number
-  /** Initial X position. Default: 0 */
-  startX?: number
-  /** Initial Y position. Default: 100 */
-  startY?: number
   /**
-   * Android drawable resource name for the icon (without "R.drawable." prefix).
+   * Size of the bubble in dp. Default: 60
+   */
+  size?: number
+
+  /**
+   * Initial X position. Default: 0
+   */
+  startX?: number
+
+  /**
+   * Initial Y position. Default: 100
+   */
+  startY?: number
+
+  /**
+   * Default icon resource name (used when no state-specific icon is provided).
+   * Android drawable resource name (without "R.drawable." prefix).
    * If not specified, uses the plugin's default icon.
    * Example: "ic_my_app_logo"
    */
   iconResourceName?: string
-  /** Color configuration for different bubble states. */
-  colors?: BubbleColors
+
+  /**
+   * Background color (hex string). Default: "#1C1C1C" (dark)
+   */
+  background?: string
+
+  /**
+   * State configuration mapping.
+   * Keys are arbitrary state names, values define icon for that state.
+   *
+   * @example
+   * ```typescript
+   * states: {
+   *   'idle': { iconResourceName: 'ic_idle' },
+   *   'recording': { iconResourceName: 'ic_recording' },
+   *   'processing': { iconResourceName: 'ic_processing' }
+   * }
+   * ```
+   */
+  states?: Record<string, StateConfig>
 }
 
 /**
@@ -63,17 +88,17 @@ export interface PermissionResponse {
  * // Basic usage with defaults
  * await showBubble()
  *
- * // With custom icon and colors
+ * // With custom icon and states
  * await showBubble({
  *   size: 60,
  *   startX: 0,
  *   startY: 200,
  *   iconResourceName: 'ic_my_logo',
- *   colors: {
- *     background: '#1C1C1C',
- *     idle: '#FFFFFF',
- *     recording: '#FF4444',
- *     processing: '#FFD633'
+ *   background: '#1C1C1C',
+ *   states: {
+ *     'idle': { iconResourceName: 'ic_idle' },
+ *     'recording': { iconResourceName: 'ic_recording' },
+ *     'processing': { iconResourceName: 'ic_processing' },
  *   }
  * })
  * ```
@@ -145,46 +170,21 @@ export async function hasOverlayPermission(): Promise<PermissionResponse> {
 }
 
 /**
- * Bubble visual state.
- * - idle: Default state with idle color
- * - recording: Active recording state with recording color
- * - processing: Processing/transcribing state with processing color
- */
-export type BubbleState = 'idle' | 'recording' | 'processing'
-
-/**
  * Update the bubble's visual state.
  *
- * @param state - The visual state to apply
+ * @param state - The state name to set. Must be a key in the states map provided to showBubble.
  *
  * @example
  * ```typescript
  * import { setBubbleState } from 'tauri-plugin-floating-bubble'
- * await setBubbleState('idle')       // Default state
- * await setBubbleState('recording')  // Recording state
- * await setBubbleState('processing') // Processing state
+ * await setBubbleState('idle')
+ * await setBubbleState('recording')
+ * await setBubbleState('processing')
  * ```
  */
-export async function setBubbleState(state: BubbleState): Promise<void> {
+export async function setBubbleState(state: string): Promise<void> {
   console.log('[FloatingBubble] setBubbleState invoking:', state)
   await invoke('plugin:floating-bubble|set_bubble_state', { state })
-}
-
-/**
- * Update the bubble's visual state to indicate recording.
- *
- * @deprecated Use setBubbleState() instead for more control
- * @param recording - Whether the bubble should show recording state
- *
- * @example
- * ```typescript
- * import { setBubbleRecording } from 'tauri-plugin-floating-bubble'
- * await setBubbleRecording(true) // Show recording state
- * await setBubbleRecording(false) // Show idle state
- * ```
- */
-export async function setBubbleRecording(recording: boolean): Promise<void> {
-  await setBubbleState(recording ? 'recording' : 'idle')
 }
 
 /**
@@ -223,9 +223,10 @@ export const BUBBLE_CLICK_EVENT = 'floating-bubble://click'
  * ```
  */
 export async function onBubbleClick(
-  callback: (event: BubbleClickEvent) => void
+  callback: (event: BubbleClickEvent) => void,
 ): Promise<() => void> {
-  return await listen<BubbleClickEvent>(BUBBLE_CLICK_EVENT, (event) => {
-    callback(event.payload)
+  const { listen } = await import('@tauri-apps/api/event')
+  return await listen(BUBBLE_CLICK_EVENT, (event) => {
+    callback(event.payload as BubbleClickEvent)
   })
 }

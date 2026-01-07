@@ -22,22 +22,10 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 
 /**
- * Bubble state enum for visual representation.
+ * Configuration for a specific bubble state.
  */
-enum class BubbleState {
-    IDLE,
-    RECORDING,
-    PROCESSING
-}
-
-/**
- * Configuration for bubble colors.
- */
-data class BubbleColors(
-    val background: Int = Color.parseColor("#1C1C1C"),
-    val idle: Int = Color.WHITE,
-    val recording: Int = Color.parseColor("#FF4444"),
-    val processing: Int = Color.parseColor("#FFD633")
+data class StateConfig(
+    val iconResourceName: String? = null
 )
 
 /**
@@ -55,30 +43,23 @@ class FloatingBubbleService : Service() {
         private const val TAG = "FloatingBubbleService"
         private const val CHANNEL_ID = "floating_bubble_channel"
         private const val NOTIFICATION_ID = 1001
-        
+
         // Configuration passed from the plugin
         var bubbleSize: Int = 60
         var bubbleStartX: Int = 0
         var bubbleStartY: Int = 100
-        var iconResourceName: String? = null
-        var colors: BubbleColors = BubbleColors()
-        
+        var defaultIconResourceName: String? = null
+        var backgroundColor: Int = Color.parseColor("#1C1C1C")
+        var stateConfigs: Map<String, StateConfig> = emptyMap()
+
         // Reference to the current service instance for state updates
         @Volatile
         private var instance: FloatingBubbleService? = null
-        
+
         // Store pending state when service isn't ready yet
         @Volatile
         private var pendingState: String? = null
-        
-        /**
-         * Update the bubble's recording state from outside the service.
-         * @deprecated Use setState instead
-         */
-        fun setRecordingState(recording: Boolean) {
-            setState(if (recording) "recording" else "idle")
-        }
-        
+
         /**
          * Update the bubble's state from outside the service.
          * Runs on main thread to safely update UI.
@@ -93,12 +74,12 @@ class FloatingBubbleService : Service() {
                 pendingState = state
                 return
             }
-            
+
             Handler(Looper.getMainLooper()).post {
                 service.updateState(state)
             }
         }
-        
+
         /**
          * Reset static state when service is fully destroyed.
          */
@@ -111,7 +92,7 @@ class FloatingBubbleService : Service() {
     private var bubbleView: ImageView? = null
     private var bubbleBackground: GradientDrawable? = null
     private var layoutParams: WindowManager.LayoutParams? = null
-    private var currentState: BubbleState = BubbleState.IDLE
+    private var currentStateName: String = "idle"
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -151,16 +132,16 @@ class FloatingBubbleService : Service() {
     private fun createBubble() {
         val density = resources.displayMetrics.density
         val sizePx = (Companion.bubbleSize * density).toInt()
-        val currentColors = Companion.colors
-        val currentIconResourceName = Companion.iconResourceName
+        val currentBackgroundColor = Companion.backgroundColor
+        val currentIconResourceName = Companion.defaultIconResourceName
 
         // Create circular background with configured color
         bubbleBackground = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            setColor(currentColors.background)
+            setColor(currentBackgroundColor)
         }
 
-        // Create bubble view with icon
+        // Create bubble view with default icon
         bubbleView = ImageView(this).apply {
             background = bubbleBackground
 
@@ -174,7 +155,7 @@ class FloatingBubbleService : Service() {
             } else {
                 0
             }
-            
+
             if (iconResId != 0) {
                 try {
                     val iconDrawable = ContextCompat.getDrawable(
@@ -190,7 +171,7 @@ class FloatingBubbleService : Service() {
                 // Try plugin's default icon, then fallback to system icon
                 loadDefaultIcon()
             }
-            
+
             scaleType = ImageView.ScaleType.CENTER_INSIDE
             val padding = (sizePx * 0.22).toInt()
             setPadding(padding, padding, padding, padding)
@@ -347,57 +328,51 @@ class FloatingBubbleService : Service() {
     
     /**
      * Update the visual state of the bubble.
-     * Only changes icon color - background stays constant.
+     * Changes the icon based on state configuration.
      */
-    private fun updateState(state: String) {
-        val newState = when (state.lowercase()) {
-            "recording" -> BubbleState.RECORDING
-            "processing" -> BubbleState.PROCESSING
-            else -> BubbleState.IDLE
-        }
-        
-        Log.d(TAG, "updateState called: $state, current: $currentState")
-        if (currentState == newState) {
+    private fun updateState(stateName: String) {
+        Log.d(TAG, "updateState called: $stateName, current: $currentStateName")
+        if (currentStateName == stateName) {
             Log.d(TAG, "State unchanged, skipping")
             return
         }
-        currentState = newState
-        
-        Log.d(TAG, "Changing state from $currentState to $newState")
-        // Apply new state (just changes icon color)
-        when (newState) {
-            BubbleState.IDLE -> applyIdleState()
-            BubbleState.RECORDING -> applyRecordingState()
-            BubbleState.PROCESSING -> applyProcessingState()
+        currentStateName = stateName
+
+        // Get state configuration
+        val config = Companion.stateConfigs[stateName]
+        Log.d(TAG, "State config for '$stateName': $config")
+
+        // Determine icon: state-specific icon -> default icon -> system fallback
+        val iconName = config?.iconResourceName ?: Companion.defaultIconResourceName
+
+        if (iconName != null) {
+            // Load and set state-specific icon
+            val iconResId = resources.getIdentifier(iconName, "drawable", packageName)
+            if (iconResId != 0) {
+                try {
+                    val iconDrawable = ContextCompat.getDrawable(this, iconResId)
+                    bubbleView?.setImageDrawable(iconDrawable)
+                    Log.d(TAG, "Loaded state icon: $iconName (resId: $iconResId)")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to load state icon: $iconName", e)
+                }
+            } else {
+                Log.w(TAG, "State icon resource not found: $iconName")
+            }
         }
-        
+
         // Update notification
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager.notify(NOTIFICATION_ID, createNotification())
     }
     
-    private fun applyIdleState() {
-        Log.d(TAG, "Applying IDLE state")
-        bubbleView?.setColorFilter(Companion.colors.idle)
-    }
-    
-    private fun applyRecordingState() {
-        Log.d(TAG, "Applying RECORDING state")
-        bubbleView?.setColorFilter(Companion.colors.recording)
-    }
-    
-    private fun applyProcessingState() {
-        Log.d(TAG, "Applying PROCESSING state")
-        bubbleView?.setColorFilter(Companion.colors.processing)
-    }
-    
     private fun createNotification(): Notification {
-        val (title, text) = when (currentState) {
-            BubbleState.RECORDING -> "Recording..." to "Tap bubble to stop"
-            BubbleState.PROCESSING -> "Processing..." to "Transcribing your voice"
-            BubbleState.IDLE -> "Floating Bubble" to "Tap the bubble to interact"
+        val (title, text) = when (currentStateName.lowercase()) {
+            "recording" -> "Recording..." to "Tap bubble to stop"
+            "processing" -> "Processing..." to "Transcribing your voice"
+            else -> "Floating Bubble" to "Tap the bubble to interact"
         }
-        
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(text)

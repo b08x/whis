@@ -61,14 +61,7 @@ impl<R: Runtime> FloatingBubble<R> {
             .map_err(Into::into)
     }
 
-    /// Set the bubble's recording state (changes visual appearance).
-    pub fn set_recording(&self, recording: bool) -> crate::Result<()> {
-        self.0
-            .run_mobile_plugin("setBubbleRecording", RecordingOptions { recording })
-            .map_err(Into::into)
-    }
-
-    /// Set the bubble's visual state (idle, recording, processing).
+    /// Set the bubble's visual state.
     pub fn set_state(&self, state: String) -> crate::Result<()> {
         self.0
             .run_mobile_plugin("setBubbleState", StateOptions { state })

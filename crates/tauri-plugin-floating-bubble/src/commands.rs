@@ -41,16 +41,7 @@ pub(crate) async fn has_overlay_permission<R: Runtime>(
     app.floating_bubble().has_permission()
 }
 
-/// Set the bubble's recording state (changes visual appearance).
-#[command]
-pub(crate) async fn set_bubble_recording<R: Runtime>(
-    app: AppHandle<R>,
-    recording: bool,
-) -> Result<()> {
-    app.floating_bubble().set_recording(recording)
-}
-
-/// Set the bubble's visual state (idle, recording, processing).
+/// Set the bubble's visual state.
 #[command]
 pub(crate) async fn set_bubble_state<R: Runtime>(app: AppHandle<R>, state: String) -> Result<()> {
     app.floating_bubble().set_state(state)

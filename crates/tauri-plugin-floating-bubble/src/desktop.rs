@@ -1,5 +1,5 @@
 use serde::de::DeserializeOwned;
-use tauri::{plugin::PluginApi, AppHandle, Runtime};
+use tauri::{AppHandle, Runtime, plugin::PluginApi};
 
 use crate::models::*;
 
@@ -34,7 +34,7 @@ impl<R: Runtime> FloatingBubble<R> {
         Err(crate::Error::UnsupportedPlatform)
     }
 
-    pub fn set_recording(&self, _recording: bool) -> crate::Result<()> {
+    pub fn set_state(&self, _state: String) -> crate::Result<()> {
         Err(crate::Error::UnsupportedPlatform)
     }
 }

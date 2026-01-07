@@ -35,7 +35,8 @@ let initialized = false
  * Should be called once at app startup.
  */
 async function initialize() {
-  if (initialized) return
+  if (initialized)
+    return
   initialized = true
 
   // Check initial config validity

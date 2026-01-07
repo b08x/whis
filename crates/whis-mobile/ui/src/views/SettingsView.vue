@@ -224,12 +224,12 @@ async function showBubble() {
       size: 60,
       startX: 0,
       startY: 200,
-      iconResourceName: 'ic_whis_logo',
-      colors: {
-        background: '#1C1C1C',
-        idle: '#FFFFFF',
-        recording: '#FF4444',
-        processing: '#FFD633',
+      iconResourceName: 'ic_whis_logo_idle',
+      background: '#1C1C1C',
+      states: {
+        idle: { iconResourceName: 'ic_whis_logo_idle' },
+        recording: { iconResourceName: 'ic_whis_logo_recording' },
+        processing: { iconResourceName: 'ic_whis_logo_processing' },
       },
     })
   }
