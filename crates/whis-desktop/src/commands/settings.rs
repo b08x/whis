@@ -167,3 +167,46 @@ fn capitalize(s: &str) -> String {
         Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
     }
 }
+
+/// Get canonical default values from whis-core
+///
+/// Returns the default configuration values so the frontend doesn't
+/// need to hardcode them. This ensures a single source of truth.
+#[tauri::command]
+pub fn get_defaults() -> serde_json::Value {
+    use whis_core::defaults::*;
+
+    serde_json::json!({
+        "provider": DEFAULT_PROVIDER.as_str(),
+        "ollama_url": DEFAULT_OLLAMA_URL,
+        "ollama_model": DEFAULT_OLLAMA_MODEL,
+        "shortcut": DEFAULT_SHORTCUT,
+        "vad_enabled": DEFAULT_VAD_ENABLED,
+        "vad_threshold": DEFAULT_VAD_THRESHOLD,
+    })
+}
+
+/// Cloud provider option for the frontend dropdown
+#[derive(serde::Serialize)]
+pub struct CloudProviderOption {
+    pub value: String,
+    pub label: String,
+}
+
+/// Get cloud providers in recommended order
+///
+/// Returns cloud providers (excluding local and realtime variants) in the
+/// order defined by TranscriptionProvider::all() for consistent UI display.
+#[tauri::command]
+pub fn get_cloud_providers() -> Vec<CloudProviderOption> {
+    use whis_core::TranscriptionProvider;
+
+    TranscriptionProvider::all()
+        .iter()
+        .filter(|p| !p.is_local() && !p.as_str().contains("realtime"))
+        .map(|p| CloudProviderOption {
+            value: p.as_str().to_string(),
+            label: p.display_name().to_string(),
+        })
+        .collect()
+}

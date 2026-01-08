@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, anyhow};
+use whis_core::defaults::{DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_URL};
 use whis_core::{PostProcessor, Preset, Settings, TranscriptionProvider};
 
 use crate::ui::mask_key;
@@ -271,14 +272,14 @@ fn get_config(key: &str) -> Result<()> {
             if let Some(url) = &settings.services.ollama.url {
                 println!("{}", url);
             } else {
-                println!("http://localhost:11434");
+                println!("{}", DEFAULT_OLLAMA_URL);
             }
         }
         "ollama-model" => {
             if let Some(model) = &settings.services.ollama.model {
                 println!("{}", model);
             } else {
-                println!("qwen2.5:1.5b");
+                println!("{}", DEFAULT_OLLAMA_MODEL);
             }
         }
         "vad" => println!("{}", settings.ui.vad.enabled),
@@ -354,12 +355,12 @@ fn show_all_settings() -> Result<()> {
     if let Some(url) = &settings.services.ollama.url {
         println!("ollama-url = {}", url);
     } else {
-        println!("ollama-url = http://localhost:11434");
+        println!("ollama-url = {}", DEFAULT_OLLAMA_URL);
     }
     if let Some(model) = &settings.services.ollama.model {
         println!("ollama-model = {}", model);
     } else {
-        println!("ollama-model = qwen2.5:1.5b");
+        println!("ollama-model = {}", DEFAULT_OLLAMA_MODEL);
     }
 
     println!();

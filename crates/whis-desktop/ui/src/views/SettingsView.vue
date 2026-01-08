@@ -67,21 +67,34 @@ watch(provider, async () => {
   }
 }, { immediate: true })
 
-// Cloud provider options for dropdown
-const cloudProviderOptions: SelectOption[] = [
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'mistral', label: 'Mistral' },
-  { value: 'groq', label: 'Groq' },
-  { value: 'deepgram', label: 'Deepgram' },
-  { value: 'elevenlabs', label: 'ElevenLabs' },
-]
+// Cloud provider options for dropdown (loaded from backend for correct order)
+const cloudProviderOptions = ref<SelectOption[]>([])
+
+// Load cloud providers from backend
+onMounted(async () => {
+  try {
+    const providers = await invoke<{ value: string, label: string }[]>('get_cloud_providers')
+    cloudProviderOptions.value = providers
+  }
+  catch (error) {
+    console.error('Failed to load cloud providers:', error)
+    // Fallback to hardcoded options if backend call fails
+    cloudProviderOptions.value = [
+      { value: 'deepgram', label: 'Deepgram' },
+      { value: 'openai', label: 'OpenAI' },
+      { value: 'mistral', label: 'Mistral' },
+      { value: 'groq', label: 'Groq' },
+      { value: 'elevenlabs', label: 'ElevenLabs' },
+    ]
+  }
+})
 
 // Filter providers based on streaming mode (only OpenAI supports streaming)
 const filteredProviderOptions = computed(() => {
   if (openaiMethod.value === 'streaming') {
-    return cloudProviderOptions.filter(p => p.value === 'openai')
+    return cloudProviderOptions.value.filter(p => p.value === 'openai')
   }
-  return cloudProviderOptions
+  return cloudProviderOptions.value
 })
 
 // Common language codes for the dropdown
@@ -106,10 +119,14 @@ function handleModeChange(mode: TranscriptionMode) {
   if (mode === 'cloud') {
     // Switch to default cloud provider if currently on local
     if (isLocalProvider(provider.value)) {
-      settingsStore.setProvider('openai')
+      const defaultProvider = settingsStore.getDefaultProvider()
+      settingsStore.setProvider(defaultProvider)
       // Auto-sync post-processor to match (if user has cloud post-processor enabled)
       if (postProcessor.value !== 'none' && postProcessor.value !== 'ollama') {
-        settingsStore.setPostProcessor('openai')
+        // Only set post-processor if default provider supports it
+        if (defaultProvider === 'openai' || defaultProvider === 'mistral') {
+          settingsStore.setPostProcessor(defaultProvider)
+        }
       }
     }
   }

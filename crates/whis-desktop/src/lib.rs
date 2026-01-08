@@ -101,6 +101,8 @@ pub fn run(start_in_tray: bool) {
             commands::get_settings,
             commands::save_settings,
             commands::check_config_readiness,
+            commands::get_defaults,
+            commands::get_cloud_providers,
             // Shortcut commands
             commands::shortcut_backend,
             commands::configure_shortcut,

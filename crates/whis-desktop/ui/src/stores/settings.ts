@@ -2,6 +2,16 @@ import type { BackendInfo, PostProcessor, Provider, Settings } from '../types'
 import { invoke } from '@tauri-apps/api/core'
 import { reactive, readonly, watch } from 'vue'
 
+// Defaults fetched from backend (single source of truth: whis-core/src/defaults.rs)
+interface Defaults {
+  provider: Provider
+  ollama_url: string
+  ollama_model: string
+  shortcut: string
+  vad_enabled: boolean
+  vad_threshold: number
+}
+
 // Debounce utility with cancel support
 function debounce<T extends (...args: unknown[]) => unknown>(fn: T, ms: number) {
   let timeoutId: ReturnType<typeof setTimeout> | null = null
@@ -25,43 +35,56 @@ function debounce<T extends (...args: unknown[]) => unknown>(fn: T, ms: number) 
   return debounced
 }
 
-// Default settings values (nested structure matching backend)
-const defaultSettings: Settings = {
-  transcription: {
-    provider: 'openai',
-    language: null,
-    api_keys: {},
-    local_models: {
-      whisper_path: null,
-      parakeet_path: null,
+// Cached defaults from backend (populated on init)
+// These are fallback values until get_defaults() is called
+let defaults: Defaults = {
+  provider: 'deepgram',
+  ollama_url: 'http://localhost:11434',
+  ollama_model: 'qwen2.5:1.5b',
+  shortcut: 'Ctrl+Alt+W',
+  vad_enabled: false,
+  vad_threshold: 0.5,
+}
+
+// Get default settings using cached defaults
+function getDefaultSettings(): Settings {
+  return {
+    transcription: {
+      provider: defaults.provider,
+      language: null,
+      api_keys: {},
+      local_models: {
+        whisper_path: null,
+        parakeet_path: null,
+      },
     },
-  },
-  post_processing: {
-    processor: 'none',
-    prompt: null,
-  },
-  services: {
-    ollama: {
-      url: 'http://localhost:11434',
-      model: null,
+    post_processing: {
+      processor: 'none',
+      prompt: null,
     },
-  },
-  ui: {
-    shortcut: 'Ctrl+Alt+W',
-    clipboard_method: 'auto',
-    microphone_device: null,
-    vad: {
-      enabled: false,
-      threshold: 0.5,
+    services: {
+      ollama: {
+        url: defaults.ollama_url,
+        model: defaults.ollama_model,
+      },
     },
-    active_preset: null,
-  },
+    ui: {
+      shortcut: defaults.shortcut,
+      clipboard_method: 'auto',
+      microphone_device: null,
+      vad: {
+        enabled: defaults.vad_enabled,
+        threshold: defaults.vad_threshold,
+      },
+      active_preset: null,
+    },
+  }
 }
 
 // Internal mutable state
 const state = reactive({
-  // Settings
-  ...defaultSettings,
+  // Settings (initialized with defaults, updated from backend)
+  ...getDefaultSettings(),
 
   // Backend info
   backendInfo: null as BackendInfo | null,
@@ -122,9 +145,9 @@ watch(
 async function load() {
   try {
     const settings = await invoke<Settings>('get_settings')
-    // Deep copy nested settings
+    // Deep copy nested settings, using cached defaults for fallbacks
     state.transcription = {
-      provider: settings.transcription.provider || 'openai',
+      provider: settings.transcription.provider || defaults.provider,
       language: settings.transcription.language,
       api_keys: settings.transcription.api_keys || {},
       local_models: {
@@ -138,17 +161,17 @@ async function load() {
     }
     state.services = {
       ollama: {
-        url: settings.services.ollama.url || 'http://localhost:11434',
-        model: settings.services.ollama.model,
+        url: settings.services.ollama.url || defaults.ollama_url,
+        model: settings.services.ollama.model || defaults.ollama_model,
       },
     }
     state.ui = {
-      shortcut: settings.ui.shortcut,
+      shortcut: settings.ui.shortcut || defaults.shortcut,
       clipboard_method: settings.ui.clipboard_method,
       microphone_device: settings.ui.microphone_device,
       vad: {
-        enabled: settings.ui.vad.enabled,
-        threshold: settings.ui.vad.threshold,
+        enabled: settings.ui.vad.enabled ?? defaults.vad_enabled,
+        threshold: settings.ui.vad.threshold ?? defaults.vad_threshold,
       },
       active_preset: settings.ui.active_preset,
     }
@@ -191,7 +214,19 @@ async function loadBackendInfo() {
   }
 }
 
+async function loadDefaults() {
+  try {
+    defaults = await invoke<Defaults>('get_defaults')
+  }
+  catch (e) {
+    console.error('Failed to load defaults from backend:', e)
+    // Keep using fallback defaults
+  }
+}
+
 async function initialize() {
+  // Load canonical defaults from backend first (single source of truth)
+  await loadDefaults()
   await loadBackendInfo()
   await load()
 
@@ -371,6 +406,11 @@ function failParakeetDownload(error: string) {
   state.parakeetDownload.error = error
 }
 
+// Getter for default provider (used by SettingsView when switching modes)
+function getDefaultProvider(): Provider {
+  return defaults.provider
+}
+
 // Export reactive state and actions
 export const settingsStore = {
   // Readonly state for reading (prevents accidental mutation)
@@ -385,6 +425,7 @@ export const settingsStore = {
   initialize,
   waitForLoaded,
   flush,
+  getDefaultProvider,
 
   // Setters
   setProvider,
