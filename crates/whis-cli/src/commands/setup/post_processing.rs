@@ -39,8 +39,9 @@ pub fn select_ollama_model(url: &str, current_model: Option<&str>) -> Result<Str
     let installed = ollama::list_models(url).unwrap_or_default();
     let installed_names: Vec<&str> = installed.iter().map(|m| m.name.as_str()).collect();
 
-    // Build display items and parallel model data
+    // Build display items (with markers) and clean items (just model names)
     let mut items = Vec::new();
+    let mut clean_items = Vec::new();
     let mut model_data: Vec<Option<(String, bool)>> = Vec::new(); // (name, needs_download)
 
     // Installed section (with prefix, no separator)
@@ -67,6 +68,7 @@ pub fn select_ollama_model(url: &str, current_model: Option<&str>) -> Result<Str
 
             // Use [Installed] prefix instead of separator
             items.push(format!("[Installed] {}{}{}", model.name, size, markers));
+            clean_items.push(model.name.clone());
             model_data.push(Some((model.name.clone(), false)));
         }
     }
@@ -85,12 +87,14 @@ pub fn select_ollama_model(url: &str, current_model: Option<&str>) -> Result<Str
         for (name, size, desc) in not_installed {
             // Use [Available] prefix instead of separator
             items.push(format!("[Available] {} ({}) - {}", name, size, desc));
+            clean_items.push(name.to_string());
             model_data.push(Some((name.to_string(), true)));
         }
     }
 
     // Custom option
     items.push("[Custom] Enter custom model name".to_string());
+    clean_items.push("Custom".to_string());
     model_data.push(None); // Custom trigger
 
     // Find default index with robust fallback chain
@@ -135,7 +139,7 @@ pub fn select_ollama_model(url: &str, current_model: Option<&str>) -> Result<Str
     let default = default.or(Some(0));
 
     // Interactive select
-    let choice = interactive::select("Which Ollama model?", &items, default)?;
+    let choice = interactive::select_clean("Which Ollama model?", &items, &clean_items, default)?;
 
     // Handle selection
     match &model_data[choice] {
@@ -144,31 +148,53 @@ pub fn select_ollama_model(url: &str, current_model: Option<&str>) -> Result<Str
             if *needs_download {
                 interactive::info(&format!("Pulling model '{}'...", model_name));
                 ollama::pull_model_with_progress(url, model_name, display_progress)?;
-                eprintln!(); // Newline after progress bar
+
+                // Verify pull succeeded
+                if !ollama::has_model(url, model_name)? {
+                    return Err(anyhow!(
+                        "Failed to pull model '{}'. Check your connection.",
+                        model_name
+                    ));
+                }
+
+                eprintln!(); // Newline after progress bar (only on success)
                 interactive::info(&format!("Model '{}' ready!", model_name));
             }
-            // No echo needed - user already confirmed with [*]
             Ok(model_name.clone())
         }
         None => {
             // Either separator or custom model
             if items[choice].contains("custom") {
-                // Custom model input
-                let model_name = interactive::input("Enter model name (e.g., llama3.2:1b)", None)?;
+                // Custom model input - loop until valid
+                loop {
+                    let model_name =
+                        interactive::input("Enter model name (e.g., llama3.2:1b)", None)?;
 
-                if model_name.is_empty() {
-                    return Err(anyhow!("Model name cannot be empty"));
+                    if model_name.is_empty() {
+                        interactive::error("Model name cannot be empty");
+                        continue;
+                    }
+
+                    // Check if model exists, pull if needed
+                    if !ollama::has_model(url, &model_name)? {
+                        interactive::info(&format!("Pulling model '{}'...", model_name));
+                        ollama::pull_model_with_progress(url, &model_name, display_progress)?;
+
+                        // Verify pull succeeded
+                        if !ollama::has_model(url, &model_name)? {
+                            interactive::error(&format!(
+                                "Model '{}' not found. Try a different name.",
+                                model_name
+                            ));
+                            continue;
+                        }
+
+                        eprintln!(); // Newline after progress bar (only on success)
+                        interactive::info(&format!("Model '{}' ready!", model_name));
+                    }
+
+                    return Ok(model_name);
                 }
-
-                // Check if model exists, pull if needed
-                if !ollama::has_model(url, &model_name)? {
-                    interactive::info(&format!("Pulling model '{}'...", model_name));
-                    ollama::pull_model_with_progress(url, &model_name, display_progress)?;
-                    eprintln!(); // Newline after progress bar
-                    interactive::info(&format!("Model '{}' ready!", model_name));
-                }
-
-                Ok(model_name)
             } else {
                 // Separator selected - shouldn't happen with proper navigation
                 Err(anyhow!("Invalid selection"))

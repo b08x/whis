@@ -13,34 +13,35 @@ use whis_core::model::{ModelType, ParakeetModel, WhisperModel};
 pub fn setup_transcription_local() -> Result<()> {
     let mut settings = Settings::load();
 
-    // Determine current engine and show with [current] marker
+    // Determine current engine and show with [current] marker during selection
     let current_engine = match settings.transcription.provider {
         TranscriptionProvider::LocalParakeet => Some(1),
         TranscriptionProvider::LocalWhisper => Some(2),
         _ => None,
     };
 
-    let items: Vec<String> = vec![
-        format!(
-            "Parakeet{}",
-            if current_engine == Some(1) {
-                " [current]"
-            } else {
-                ""
-            }
+    let (items, clean_items): (Vec<String>, Vec<String>) = vec![
+        (
+            format!(
+                "Parakeet{}",
+                if current_engine == Some(1) { " [current]" } else { "" }
+            ),
+            "Parakeet".to_string(),
         ),
-        format!(
-            "Whisper{}",
-            if current_engine == Some(2) {
-                " [current]"
-            } else {
-                ""
-            }
+        (
+            format!(
+                "Whisper{}",
+                if current_engine == Some(2) { " [current]" } else { "" }
+            ),
+            "Whisper".to_string(),
         ),
-    ];
+    ]
+    .into_iter()
+    .unzip();
+
     let default = current_engine.map(|e| e - 1).unwrap_or(0);
     let engine_choice =
-        interactive::select("Which transcription engine?", &items, Some(default))? + 1;
+        interactive::select_clean("Which transcription engine?", &items, &clean_items, Some(default))? + 1;
 
     let (provider, model_path) = match engine_choice {
         1 => {
@@ -60,8 +61,8 @@ pub fn setup_transcription_local() -> Result<()> {
                         .map(|m| m.name)
                 });
 
-            // Build selection items
-            let items: Vec<String> = ParakeetModel
+            // Build selection items with markers, clean items without
+            let (items, clean_items): (Vec<String>, Vec<String>) = ParakeetModel
                 .models()
                 .iter()
                 .map(|model| {
@@ -76,9 +77,9 @@ pub fn setup_transcription_local() -> Result<()> {
                     } else {
                         ""
                     };
-                    format!("{}{}{}", model.name, installed, current)
+                    (format!("{}{}{}", model.name, installed, current), model.name.to_string())
                 })
-                .collect();
+                .unzip();
 
             // Default to current model or first (recommended)
             let default_idx = current_model
@@ -86,7 +87,7 @@ pub fn setup_transcription_local() -> Result<()> {
                 .unwrap_or(0);
 
             let model_choice =
-                interactive::select("Which Parakeet model?", &items, Some(default_idx))?;
+                interactive::select_clean("Which Parakeet model?", &items, &clean_items, Some(default_idx))?;
             let model = &ParakeetModel.models()[model_choice];
 
             let path = ParakeetModel.default_path(model.name);
@@ -112,8 +113,8 @@ pub fn setup_transcription_local() -> Result<()> {
                         .map(|m| m.name)
                 });
 
-            // Build selection items
-            let items: Vec<String> = WhisperModel
+            // Build selection items with markers, clean items without
+            let (items, clean_items): (Vec<String>, Vec<String>) = WhisperModel
                 .models()
                 .iter()
                 .map(|model| {
@@ -128,12 +129,12 @@ pub fn setup_transcription_local() -> Result<()> {
                     } else {
                         ""
                     };
-                    format!(
-                        "{} - {}{}{}",
-                        model.name, model.description, installed, current
+                    (
+                        format!("{} - {}{}{}", model.name, model.description, installed, current),
+                        model.name.to_string(),
                     )
                 })
-                .collect();
+                .unzip();
 
             // Default to current model or "small" (index 2)
             let default_idx = current_model
@@ -141,7 +142,7 @@ pub fn setup_transcription_local() -> Result<()> {
                 .unwrap_or(2);
 
             let model_choice =
-                interactive::select("Which Whisper model?", &items, Some(default_idx))?;
+                interactive::select_clean("Which Whisper model?", &items, &clean_items, Some(default_idx))?;
             let model = &WhisperModel.models()[model_choice];
 
             let path = WhisperModel.default_path(model.name);
