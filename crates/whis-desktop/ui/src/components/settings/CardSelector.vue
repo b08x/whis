@@ -2,7 +2,7 @@
 export interface CardOption<T extends string = string> {
   value: T
   title: string
-  description: string
+  description?: string
 }
 
 defineProps<{
@@ -28,7 +28,7 @@ const emit = defineEmits<{
       <div class="card-title">
         {{ option.title }}
       </div>
-      <div class="card-desc">
+      <div v-if="option.description" class="card-desc">
         {{ option.description }}
       </div>
     </button>
@@ -70,12 +70,13 @@ const emit = defineEmits<{
 
 .card-title {
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 300;
   color: var(--text);
   margin-bottom: 2px;
 }
 
 .selector-card.active .card-title {
+  font-weight: 500;
   color: var(--accent);
 }
 

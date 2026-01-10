@@ -1,18 +1,5 @@
 import { computed, ref } from 'vue'
-
-// Platform detection for macOS-friendly key display
-const isMac = navigator.platform.toUpperCase().includes('MAC')
-
-function displayKey(key: string): string {
-  if (!isMac)
-    return key
-  switch (key.toLowerCase()) {
-    case 'ctrl': return 'Control'
-    case 'alt': return 'Option'
-    case 'super': return 'Cmd'
-    default: return key
-  }
-}
+import { displayKey, isMac } from '../utils/keys.js'
 
 /**
  * Composable for capturing keyboard shortcuts.

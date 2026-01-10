@@ -95,9 +95,15 @@ const state = reactive({
   backendInfo: null as BackendInfo | null,
   portalShortcut: null as string | null,
   portalBindError: null as string | null,
+  rdevGrabError: null as string | null,
+  isInInputGroup: false,
+  systemShortcut: null as string | null, // GNOME custom shortcut (RdevGrab backend)
 
   // Loading state
   loaded: false,
+
+  // Window visibility state (for smooth show/hide transitions)
+  windowVisible: false,
 
   // Download state (not persisted to disk)
   whisperDownload: {
@@ -218,6 +224,15 @@ async function loadBackendInfo() {
       state.portalShortcut = await invoke<string | null>('portal_shortcut')
       state.portalBindError = await invoke<string | null>('portal_bind_error')
     }
+
+    // For RdevGrab backend, fetch any grab errors and check input group
+    if (state.backendInfo?.backend === 'RdevGrab') {
+      state.rdevGrabError = await invoke<string | null>('rdev_grab_error')
+      state.isInInputGroup = await invoke<boolean>('check_input_group_membership')
+
+      // Try to read configured system shortcut from GNOME dconf
+      state.systemShortcut = await invoke<string | null>('system_shortcut_from_dconf')
+    }
   }
   catch (e) {
     console.error('Failed to get backend info:', e)
@@ -273,6 +288,15 @@ async function initialize() {
   }
 
   state.loaded = true
+
+  // Sync detected system shortcut to settings.json
+  // Must be after state.loaded = true so watcher triggers auto-save
+  if (state.backendInfo?.backend === 'RdevGrab' && state.systemShortcut) {
+    if (state.systemShortcut !== state.ui.shortcut_key) {
+      state.ui.shortcut_key = state.systemShortcut
+      // Watcher automatically saves since state.loaded is true
+    }
+  }
 }
 
 async function waitForLoaded(): Promise<void> {
@@ -379,6 +403,11 @@ function setChunkDuration(value: number) {
   state.ui.chunk_duration_secs = Math.max(10, Math.min(300, value))
 }
 
+// Window visibility state (for smooth show/hide transitions on Wayland)
+function setWindowVisible(visible: boolean) {
+  state.windowVisible = visible
+}
+
 // Download state management - Whisper
 function startWhisperDownload(model: string) {
   state.whisperDownload.active = true
@@ -466,6 +495,7 @@ export const settingsStore = {
   setBubbleEnabled,
   setBubblePosition,
   setChunkDuration,
+  setWindowVisible,
 
   // Download state management
   startWhisperDownload,

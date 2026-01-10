@@ -70,6 +70,7 @@ export interface BackendInfo {
   requires_restart: boolean
   compositor: string
   portal_version: number
+  is_flatpak: boolean
 }
 
 // Status response from backend

@@ -19,6 +19,7 @@ const appSite = 'https://whis.ink'
 // Window controls
 const showCustomControls = ref(true)
 const loaded = computed(() => settingsStore.state.loaded)
+const windowVisible = computed(() => settingsStore.state.windowVisible)
 
 // Current route name for navigation highlighting
 const currentRoute = computed(() => route.name as string)
@@ -43,6 +44,10 @@ async function minimizeWindow() {
 
 async function closeWindow() {
   try {
+    // Fade out before hiding to prevent flicker on reopen
+    settingsStore.setWindowVisible(false)
+    await new Promise(r => setTimeout(r, 150)) // Wait for CSS transition
+
     // Flush pending settings before closing to prevent race condition with debounced auto-save
     await settingsStore.flush()
 
@@ -63,6 +68,27 @@ onMounted(async () => {
   showCustomControls.value = true
   await settingsStore.initialize()
 
+  const currentWindow = getCurrentWindow()
+
+  // Listen for window focus changes (handles reopen from tray)
+  // Use double-RAF to ensure WebView has repainted before transitioning
+  await currentWindow.onFocusChanged(({ payload: focused }) => {
+    if (focused) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          settingsStore.setWindowVisible(true)
+        })
+      })
+    }
+  })
+
+  // Initial visibility transition (first load)
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      settingsStore.setWindowVisible(true)
+    })
+  })
+
   // Listen for tray quit event - flush settings before exit
   await listen('tray-quit-requested', async () => {
     await settingsStore.flush()
@@ -78,7 +104,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="app" :class="{ loaded }">
+  <div class="app" :class="{ loaded: loaded && windowVisible }">
     <div class="window">
       <!-- Sidebar -->
       <aside class="sidebar" data-tauri-drag-region>
@@ -356,6 +382,29 @@ body {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border-width: 0;
+}
+
+/* Shared keyboard shortcut key display */
+.keys {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 26px;
+  padding: 0 8px;
+  background: var(--bg-weak);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
 }
 </style>
 

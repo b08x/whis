@@ -13,8 +13,8 @@ const emit = defineEmits<{
 }>()
 
 const modeOptions: CardOption<TranscriptionMode>[] = [
-  { value: 'cloud', title: 'Cloud', description: 'Fast & accurate' },
-  { value: 'local', title: 'Local', description: 'Private & free' },
+  { value: 'cloud', title: 'Cloud', description: 'Online' },
+  { value: 'local', title: 'Local', description: 'Offline' },
 ]
 </script>
 
