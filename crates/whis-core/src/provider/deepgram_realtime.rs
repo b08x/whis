@@ -32,9 +32,10 @@ use super::{
 };
 
 const WS_URL: &str = "wss://api.deepgram.com/v1/listen";
-const MODEL: &str = "nova-2";
+const MODEL: &str = "nova-3";
 const SAMPLE_RATE: u32 = 16000;
-const KEEPALIVE_INTERVAL_SECS: u64 = 5;
+/// Keepalive interval - 4s gives wider margin vs 10s server timeout
+const KEEPALIVE_INTERVAL_SECS: u64 = 4;
 
 /// Deepgram Live Streaming provider
 ///
@@ -102,16 +103,17 @@ impl DeepgramRealtimeProvider {
             HeaderValue::from_str(&format!("Token {api_key}"))?,
         );
 
-        // 3. Connect WebSocket
-        let (ws_stream, _response) = connect_async(request)
+        // 3. Connect WebSocket with timeout
+        let (ws_stream, _response) = timeout(Duration::from_secs(30), connect_async(request))
             .await
+            .context("Connection timeout")?
             .context("Failed to connect to Deepgram Live Streaming API")?;
 
         let (write, read) = ws_stream.split();
         let write = Arc::new(Mutex::new(write));
 
-        // 4. Create done channel to signal when Finalize is sent
-        let (done_tx, done_rx) = oneshot::channel();
+        // 4. Create done channel to signal when CloseStream is sent (includes total_samples for dynamic timeout)
+        let (done_tx, done_rx) = oneshot::channel::<usize>();
 
         // 5. Spawn read task to collect transcripts
         let read_handle = tokio::spawn(async move { collect_transcripts(read, done_rx).await });
@@ -164,16 +166,18 @@ impl DeepgramRealtimeProvider {
         let _ = keepalive_cancel_tx.send(());
         let _ = keepalive_handle.await;
 
-        // 9. Send Finalize message to flush buffer
+        // 9. Send CloseStream message to flush buffer (more reliable than Finalize per Deepgram docs)
         write
             .lock()
             .await
-            .send(Message::Text(r#"{"type":"Finalize"}"#.to_string().into()))
+            .send(Message::Text(
+                r#"{"type":"CloseStream"}"#.to_string().into(),
+            ))
             .await
-            .context("Failed to send Finalize message")?;
+            .context("Failed to send CloseStream message")?;
 
-        // 10. Signal read task that Finalize was sent
-        let _ = done_tx.send(());
+        // 10. Signal read task that CloseStream was sent with total_samples for dynamic timeout
+        let _ = done_tx.send(total_samples);
 
         // 11. Wait for final transcript with timeout
         let transcript_result = timeout(Duration::from_secs(30), read_handle).await;
@@ -237,32 +241,34 @@ where
     Ok(())
 }
 
-/// Timeout for waiting for final results after Finalize is sent.
-/// Deepgram docs say from_finalize is not guaranteed, so we use a timeout.
-/// Increased from 500ms to 1500ms to handle slow networks better.
-const POST_FINALIZE_TIMEOUT_MS: u64 = 1500;
-
 /// Collect final transcripts from WebSocket messages
 ///
 /// Two-phase approach (similar to OpenAI implementation):
 /// - Phase 1: During streaming, collect final transcripts as they arrive
-/// - Phase 2: After done signal (Finalize sent), wait for from_finalize=true
-///   or use a short timeout since from_finalize is not guaranteed by Deepgram
+/// - Phase 2: After done signal (CloseStream sent), wait for remaining results
+///   with a dynamic timeout based on recording duration
 ///
-/// This avoids waiting for WebSocket close, which can take many seconds.
-async fn collect_transcripts<S>(mut read: S, mut done_rx: oneshot::Receiver<()>) -> Result<String>
+/// The done_rx channel receives total_samples to calculate dynamic timeout.
+/// Longer recordings need more processing time after CloseStream.
+async fn collect_transcripts<S>(
+    mut read: S,
+    mut done_rx: oneshot::Receiver<usize>,
+) -> Result<String>
 where
     S: Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
 {
     let mut final_transcript = String::new();
 
     // Phase 1: Collect transcripts during streaming
+    // total_samples will be received when streaming completes
+    let total_samples: usize;
     loop {
         tokio::select! {
-            // Check if main task signaled that Finalize was sent
-            _ = &mut done_rx => {
+            // Check if main task signaled that CloseStream was sent
+            result = &mut done_rx => {
+                total_samples = result.unwrap_or(0);
                 if crate::verbose::is_verbose() {
-                    eprintln!("[deepgram-realtime] Finalize sent, switching to post-finalize phase");
+                    eprintln!("[deepgram-realtime] CloseStream sent, switching to post-close phase");
                 }
                 // Break to phase 2
                 break;
@@ -277,9 +283,20 @@ where
         }
     }
 
-    // Phase 2: Wait for final results with timeout
-    // Use a short timeout since from_finalize is not guaranteed by Deepgram
-    let timeout_duration = Duration::from_millis(POST_FINALIZE_TIMEOUT_MS);
+    // Phase 2: Wait for final results with dynamic timeout
+    // Calculate based on recording duration: min(5s, audio_duration/5), capped at 60s
+    // 16kHz sample rate, so audio_duration_secs = total_samples / 16000
+    let audio_duration_secs = total_samples as f64 / 16000.0;
+    let post_close_timeout_secs = (audio_duration_secs / 5.0).clamp(5.0, 60.0);
+
+    if crate::verbose::is_verbose() {
+        eprintln!(
+            "[deepgram-realtime] Audio duration: {:.1}s, post-close timeout: {:.1}s",
+            audio_duration_secs, post_close_timeout_secs
+        );
+    }
+
+    let timeout_duration = Duration::from_secs_f64(post_close_timeout_secs);
     let deadline = tokio::time::Instant::now() + timeout_duration;
 
     loop {
@@ -287,7 +304,7 @@ where
         if remaining.is_zero() {
             if crate::verbose::is_verbose() {
                 eprintln!(
-                    "[deepgram-realtime] Post-finalize timeout, returning with current transcript"
+                    "[deepgram-realtime] Post-close timeout, returning with current transcript"
                 );
             }
             return Ok(final_transcript.trim().to_string());
@@ -296,7 +313,7 @@ where
         tokio::select! {
             _ = tokio::time::sleep(remaining) => {
                 if crate::verbose::is_verbose() {
-                    eprintln!("[deepgram-realtime] Post-finalize timeout, returning with current transcript");
+                    eprintln!("[deepgram-realtime] Post-close timeout, returning with current transcript");
                 }
                 return Ok(final_transcript.trim().to_string());
             }
@@ -342,14 +359,12 @@ fn process_message(
                         final_transcript.push(' ');
                     }
 
-                    // If this result is from Finalize, we're done immediately
-                    if event.from_finalize {
-                        if crate::verbose::is_verbose() {
-                            eprintln!(
-                                "[deepgram-realtime] Received from_finalize result, returning"
-                            );
-                        }
-                        return Ok(Some(final_transcript.trim().to_string()));
+                    // Note: Don't return immediately on from_finalize.
+                    // Deepgram may send multiple from_finalize=true events when flushing
+                    // buffered content (one per phrase boundary). Continue collecting
+                    // until timeout to capture all chunks.
+                    if event.from_finalize && crate::verbose::is_verbose() {
+                        eprintln!("[deepgram-realtime] Received from_finalize result");
                     }
                 }
                 "Metadata" => {

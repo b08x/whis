@@ -1,9 +1,9 @@
 //! OpenAI Realtime API transcription provider
 //!
-//! Uses WebSocket to stream audio in real-time for lower latency transcription.
-//! Audio is streamed during recording rather than buffered and uploaded after.
+//! Streams audio via WebSocket for real-time transcription.
 //!
-//! See `realtime.rs` module docs for the common implementation pattern.
+//! Model: `gpt-4o-transcribe` (speech-to-text only, no AI responses).
+//! No `gpt-5-transcribe` yet as of 2026-01-11.
 
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
@@ -26,7 +26,7 @@ use super::{
     TranscriptionResult,
 };
 
-const WS_URL: &str = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview";
+const WS_URL: &str = "wss://api.openai.com/v1/realtime?intent=transcription";
 const REALTIME_SAMPLE_RATE: u32 = 24000;
 
 /// OpenAI Realtime transcription provider
@@ -36,7 +36,7 @@ const REALTIME_SAMPLE_RATE: u32 = 24000;
 #[derive(Debug, Default, Clone)]
 pub struct OpenAIRealtimeProvider;
 
-// WebSocket protocol messages (Beta API format)
+// WebSocket protocol messages (GA API format)
 
 #[derive(Serialize)]
 struct SessionUpdate {
@@ -45,29 +45,46 @@ struct SessionUpdate {
     session: SessionConfig,
 }
 
+/// GA API session configuration for transcription mode
 #[derive(Serialize)]
 struct SessionConfig {
-    input_audio_format: &'static str,
-    input_audio_transcription: InputAudioTranscription,
-    /// Set to None to disable VAD (serializes as null in JSON)
+    /// Session type: "transcription" for transcription-only mode
+    #[serde(rename = "type")]
+    session_type: &'static str,
+    audio: AudioConfig,
+}
+
+#[derive(Serialize)]
+struct AudioConfig {
+    input: AudioInputConfig,
+}
+
+#[derive(Serialize)]
+struct AudioInputConfig {
+    format: AudioFormat,
+    transcription: TranscriptionConfig,
+    #[serde(skip_serializing_if = "Option::is_none")]
     turn_detection: Option<TurnDetection>,
 }
 
 #[derive(Serialize)]
-struct InputAudioTranscription {
+struct AudioFormat {
+    #[serde(rename = "type")]
+    format_type: &'static str,
+    rate: u32,
+}
+
+#[derive(Serialize)]
+struct TranscriptionConfig {
     model: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    language: Option<String>,
 }
 
 #[derive(Serialize)]
 struct TurnDetection {
     #[serde(rename = "type")]
     detection_type: &'static str,
-}
-
-#[derive(Serialize)]
-struct ResponseCreate {
-    #[serde(rename = "type")]
-    msg_type: &'static str,
 }
 
 #[derive(Serialize)]
@@ -109,7 +126,7 @@ impl OpenAIRealtimeProvider {
     async fn transcribe_stream_impl(
         api_key: &str,
         mut audio_rx: mpsc::UnboundedReceiver<Vec<f32>>,
-        _language: Option<String>,
+        language: Option<String>,
     ) -> Result<String> {
         // 1. Build WebSocket request with auth headers
         let mut request = WS_URL.into_client_request()?;
@@ -117,26 +134,33 @@ impl OpenAIRealtimeProvider {
             AUTHORIZATION,
             HeaderValue::from_str(&format!("Bearer {api_key}"))?,
         );
-        request
-            .headers_mut()
-            .insert("OpenAI-Beta", HeaderValue::from_static("realtime=v1"));
 
-        // 2. Connect to WebSocket
-        let (ws_stream, _response) = connect_async(request)
+        // 2. Connect to WebSocket with timeout
+        let (ws_stream, _response) = timeout(Duration::from_secs(30), connect_async(request))
             .await
+            .context("Connection timeout")?
             .context("Failed to connect to OpenAI Realtime API")?;
 
         let (mut write, mut read) = ws_stream.split();
 
-        // 3. Configure session
-        // Disable VAD - we'll explicitly trigger transcription with response.create
-        // Server VAD causes issues with longer recordings because it waits for "turn" boundaries
+        // 3. Configure session for transcription-only mode (GA API format)
         let session_update = SessionUpdate {
             msg_type: "session.update",
             session: SessionConfig {
-                input_audio_format: "pcm16",
-                input_audio_transcription: InputAudioTranscription { model: "whisper-1" },
-                turn_detection: None, // Disable VAD for transcription-only mode
+                session_type: "transcription",
+                audio: AudioConfig {
+                    input: AudioInputConfig {
+                        format: AudioFormat {
+                            format_type: "audio/pcm",
+                            rate: REALTIME_SAMPLE_RATE,
+                        },
+                        transcription: TranscriptionConfig {
+                            model: "gpt-4o-transcribe",
+                            language: language.clone(),
+                        },
+                        turn_detection: None, // Server VAD disabled for manual control
+                    },
+                },
             },
         };
 
@@ -147,43 +171,52 @@ impl OpenAIRealtimeProvider {
             .await
             .context("Failed to send session configuration")?;
 
-        // Wait for session.created or session.updated confirmation
-        loop {
-            match read.next().await {
-                Some(Ok(Message::Text(text))) => {
-                    let event: RealtimeEvent =
-                        serde_json::from_str(&text).context("Failed to parse server event")?;
+        // Wait for session.created or session.updated confirmation with timeout
+        let setup_result = timeout(Duration::from_secs(30), async {
+            loop {
+                match read.next().await {
+                    Some(Ok(Message::Text(text))) => {
+                        let event: RealtimeEvent =
+                            serde_json::from_str(&text).context("Failed to parse server event")?;
 
-                    if event.event_type == "error"
-                        && let Some(err) = event.error
-                    {
-                        return Err(anyhow!("OpenAI Realtime error: {}", err.message));
-                    }
+                        if event.event_type == "error"
+                            && let Some(err) = event.error
+                        {
+                            return Err(anyhow!("OpenAI Realtime error: {}", err.message));
+                        }
 
-                    if event.event_type == "session.created"
-                        || event.event_type == "session.updated"
-                    {
-                        break;
+                        if event.event_type == "session.created"
+                            || event.event_type == "session.updated"
+                        {
+                            return Ok(());
+                        }
                     }
+                    Some(Ok(Message::Close(_))) => {
+                        return Err(anyhow!("WebSocket closed unexpectedly during setup"));
+                    }
+                    Some(Err(e)) => {
+                        return Err(anyhow!("WebSocket error during setup: {e}"));
+                    }
+                    None => {
+                        return Err(anyhow!("WebSocket connection closed during setup"));
+                    }
+                    _ => {} // Ignore other message types (Ping, Pong, Binary)
                 }
-                Some(Ok(Message::Close(_))) => {
-                    return Err(anyhow!("WebSocket closed unexpectedly during setup"));
-                }
-                Some(Err(e)) => {
-                    return Err(anyhow!("WebSocket error during setup: {e}"));
-                }
-                None => {
-                    return Err(anyhow!("WebSocket connection closed during setup"));
-                }
-                _ => {} // Ignore other message types (Ping, Pong, Binary)
             }
+        })
+        .await;
+
+        match setup_result {
+            Ok(Ok(())) => {} // Setup successful
+            Ok(Err(e)) => return Err(e),
+            Err(_) => return Err(anyhow!("Timeout during session setup")),
         }
 
         // 4. Create done channel and spawn read task
         // error_tx: read task sends error if server sends one during streaming
-        // done_tx: main task signals read task when streaming is complete
+        // done_tx: main task signals read task when streaming is complete (includes total_samples for dynamic timeout)
         let (error_tx, mut error_rx) = oneshot::channel::<anyhow::Error>();
-        let (done_tx, done_rx) = oneshot::channel::<()>();
+        let (done_tx, done_rx) = oneshot::channel::<usize>(); // Now sends total_samples
 
         let read_handle =
             tokio::spawn(async move { collect_transcripts(read, error_tx, done_rx).await });
@@ -252,7 +285,7 @@ impl OpenAIRealtimeProvider {
             );
         }
 
-        // 7. Send finalize messages (commit + response.create)
+        // 7. Commit audio buffer to trigger transcription (GA API - no response.create needed)
         let commit = AudioBufferCommit {
             msg_type: "input_audio_buffer.commit",
         };
@@ -262,17 +295,8 @@ impl OpenAIRealtimeProvider {
             .await
             .context("Failed to commit audio buffer")?;
 
-        // Trigger transcription explicitly (required when VAD is disabled)
-        let response = ResponseCreate {
-            msg_type: "response.create",
-        };
-        write
-            .send(Message::Text(serde_json::to_string(&response)?.into()))
-            .await
-            .context("Failed to create response")?;
-
-        // 8. Signal done_tx to notify read task
-        let _ = done_tx.send(());
+        // 8. Signal done_tx to notify read task with total_samples for dynamic timeout
+        let _ = done_tx.send(total_samples);
 
         // 9. Wait for read task with timeout (30s)
         let transcript_result = timeout(Duration::from_secs(30), read_handle).await;
@@ -309,11 +333,12 @@ impl OpenAIRealtimeProvider {
 /// IMPORTANT: OpenAI may send the transcript event during Phase 1 if the recording
 /// is short. We must capture it to avoid losing transcripts.
 ///
-/// This function is named `collect_transcripts` to match Deepgram's pattern.
+/// The done_rx channel receives total_samples to calculate a dynamic timeout for Phase 2.
+/// Longer recordings need more processing time after Finalize.
 async fn collect_transcripts<S>(
     mut read: S,
     error_tx: oneshot::Sender<anyhow::Error>,
-    mut done_rx: oneshot::Receiver<()>,
+    mut done_rx: oneshot::Receiver<usize>,
 ) -> Result<String>
 where
     S: futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
@@ -322,10 +347,13 @@ where
     let mut early_transcript: Option<String> = None;
 
     // Phase 1: Monitor for errors AND collect transcripts during audio streaming
+    // total_samples will be received when streaming completes
+    let total_samples: usize;
     loop {
         tokio::select! {
             // Check if main task signaled streaming is complete
-            _ = &mut done_rx => {
+            result = &mut done_rx => {
+                total_samples = result.unwrap_or(0);
                 if crate::verbose::is_verbose() {
                     eprintln!("[openai-realtime] Finalize sent, switching to post-finalize phase");
                 }
@@ -395,19 +423,41 @@ where
     }
 
     // Phase 2: Wait for final transcript after streaming completes
-    // Use a timeout to avoid waiting forever if something goes wrong
-    let timeout_duration = Duration::from_secs(10);
+    // Calculate dynamic timeout based on recording duration
+    // Formula: min(30s, audio_duration/5), capped at 120s
+    // 16kHz sample rate, so audio_duration_secs = total_samples / 16000
+    let audio_duration_secs = total_samples as f64 / 16000.0;
+    let phase2_timeout_secs = (audio_duration_secs / 5.0).clamp(30.0, 120.0) as u64;
+
+    if crate::verbose::is_verbose() {
+        eprintln!(
+            "[openai-realtime] Audio duration: {:.1}s, Phase 2 timeout: {}s",
+            audio_duration_secs, phase2_timeout_secs
+        );
+    }
+
+    let timeout_duration = Duration::from_secs(phase2_timeout_secs);
     let deadline = tokio::time::Instant::now() + timeout_duration;
 
     loop {
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
         if remaining.is_zero() {
-            return Err(anyhow!("Timeout waiting for transcription in Phase 2"));
+            // Graceful degradation: return empty string with warning instead of error
+            eprintln!(
+                "[openai-realtime] WARNING: Phase 2 timeout after {}s - no transcript received",
+                phase2_timeout_secs
+            );
+            return Ok(String::new());
         }
 
         tokio::select! {
             _ = tokio::time::sleep(remaining) => {
-                return Err(anyhow!("Timeout waiting for transcription in Phase 2"));
+                // Graceful degradation: return empty string with warning instead of error
+                eprintln!(
+                    "[openai-realtime] WARNING: Phase 2 timeout after {}s - no transcript received",
+                    phase2_timeout_secs
+                );
+                return Ok(String::new());
             }
 
             msg = read.next() => {
@@ -436,13 +486,17 @@ where
                         }
                     }
                     Some(Ok(Message::Close(_))) => {
-                        return Err(anyhow!("WebSocket closed before receiving transcription"));
+                        // Graceful degradation: connection closed, return empty string
+                        eprintln!("[openai-realtime] WARNING: WebSocket closed before receiving transcription");
+                        return Ok(String::new());
                     }
                     Some(Err(e)) => {
                         return Err(anyhow!("WebSocket error: {e}"));
                     }
                     None => {
-                        return Err(anyhow!("Connection ended before receiving transcription"));
+                        // Graceful degradation: connection ended, return empty string
+                        eprintln!("[openai-realtime] WARNING: Connection ended before receiving transcription");
+                        return Ok(String::new());
                     }
                     _ => {} // Ignore Ping, Pong, Binary
                 }
