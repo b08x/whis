@@ -16,7 +16,7 @@ tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 reqwest.workspace = true
-tauri = { version = "2.9", features = ["tray-icon", "image-png", "macos-private-api"] }
+tauri = { version = "2.9.5", features = ["tray-icon", "image-png", "macos-private-api"] }
 tauri-plugin-global-shortcut = "2.3"
 tauri-plugin-process = "2.3"
 futures-util = "0.3"

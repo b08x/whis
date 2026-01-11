@@ -40,7 +40,7 @@ pub async fn save_settings(
     settings: Settings,
 ) -> Result<SaveSettingsResponse, String> {
     // Check what changed
-    let (config_changed, shortcut_changed) = {
+    let (config_changed, shortcut_changed, bubble_position_changed) = {
         let current = state.settings.lock().unwrap();
         (
             current.transcription.provider != settings.transcription.provider
@@ -51,6 +51,7 @@ pub async fn save_settings(
                 || current.transcription.local_models.parakeet_path
                     != settings.transcription.local_models.parakeet_path,
             current.shortcuts.desktop_key != settings.shortcuts.desktop_key,
+            current.ui.bubble.position != settings.ui.bubble.position,
         )
     };
 
@@ -72,6 +73,11 @@ pub async fn save_settings(
     } else {
         false
     };
+
+    // Reposition bubble if its position changed
+    if bubble_position_changed {
+        crate::bubble::events::reposition_bubble(&app);
+    }
 
     Ok(SaveSettingsResponse { needs_restart })
 }
@@ -179,6 +185,7 @@ pub fn get_defaults() -> serde_json::Value {
 
     serde_json::json!({
         "provider": DEFAULT_PROVIDER.as_str(),
+        "post_processor": DEFAULT_POST_PROCESSOR.to_string(),
         "ollama_url": DEFAULT_OLLAMA_URL,
         "ollama_model": DEFAULT_OLLAMA_MODEL,
         "desktop_key": DEFAULT_SHORTCUT,
@@ -202,9 +209,7 @@ pub struct CloudProviderOption {
 pub fn get_cloud_providers() -> Vec<CloudProviderOption> {
     use whis_core::TranscriptionProvider;
 
-    TranscriptionProvider::all()
-        .iter()
-        .filter(|p| !p.is_local() && !p.as_str().contains("realtime"))
+    TranscriptionProvider::cloud_providers()
         .map(|p| CloudProviderOption {
             value: p.as_str().to_string(),
             label: p.display_name().to_string(),

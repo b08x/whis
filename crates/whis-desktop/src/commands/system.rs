@@ -80,7 +80,7 @@ pub async fn warmup_connections() -> Result<(), String> {
 
     // Get provider and its API key
     let provider = Some(settings.transcription.provider.to_string());
-    let provider_api_key = settings.transcription.api_key();
+    let provider_api_key = settings.transcription.api_key_from_settings();
 
     // Get post-processor and its API key
     let post_processor = match &settings.post_processing.processor {
@@ -90,7 +90,7 @@ pub async fn warmup_connections() -> Result<(), String> {
     let post_processor_api_key = if post_processor.is_some() {
         settings
             .post_processing
-            .api_key(&settings.transcription.api_keys)
+            .api_key_from_settings(&settings.transcription.api_keys)
     } else {
         None
     };

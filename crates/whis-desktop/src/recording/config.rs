@@ -23,7 +23,7 @@ pub fn load_transcription_config(state: &AppState) -> Result<TranscriptionConfig
             .ok_or_else(|| "Parakeet model not configured. Add it in Settings.".to_string())?,
         _ => settings
             .transcription
-            .api_key()
+            .api_key_from_settings()
             .ok_or_else(|| format!("No {} API key configured. Add it in Settings.", provider))?,
     };
 

@@ -27,14 +27,23 @@ pub fn show_bubble(app: &AppHandle) {
     }
 }
 
+/// Update bubble position without changing visibility
+pub fn reposition_bubble(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("bubble") {
+        if let Ok((x, y)) = super::window::calculate_bubble_position(app) {
+            let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }));
+        }
+    }
+}
+
 /// Hide the bubble
 pub fn hide_bubble(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("bubble") {
         let _ = window.emit("bubble-hide", ());
-        // Delay hide for fade-out animation
+        // Delay hide for fade-out animation (use async to avoid spawning OS thread)
         let window_clone = window.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(200));
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
             let _ = window_clone.hide();
         });
     }

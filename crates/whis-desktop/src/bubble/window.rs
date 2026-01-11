@@ -36,43 +36,54 @@ pub fn create_bubble_window(app: &AppHandle) -> Result<(), String> {
     .build()
     .map_err(|e| e.to_string())?;
 
-    // Linux/Wayland: Remove GTK titlebar for proper transparency
-    #[cfg(target_os = "linux")]
-    {
-        use gtk::prelude::GtkWindowExt;
-        if let Ok(gtk_window) = window.gtk_window() {
-            gtk_window.set_titlebar(Option::<&gtk::Widget>::None);
-        }
-    }
+    // Note: Do NOT call gtk_window.set_titlebar(None) here - it breaks window
+    // positioning on Wayland. Transparency works via .transparent(true) alone.
+    let _ = window;
 
     Ok(())
 }
 
-/// Calculate bubble position based on settings
+/// Calculate bubble position based on settings.
+///
+/// # Known Limitation (Linux/Dev Mode)
+///
+/// Bubble positioning may not work correctly when running via `cargo tauri dev`.
+/// This is due to Tauri/GTK window positioning limitations on Linux:
+/// - Wayland does not support programmatic window positioning by design
+/// - Dev mode initializes GTK differently than production builds
+///
+/// The bubble position works correctly when installed via `just install-desktop`.
+///
+/// Related Tauri issues:
+/// - <https://github.com/tauri-apps/tauri/issues/7376> (Linux positioning)
+/// - <https://github.com/tauri-apps/tauri/issues/12411> (Wayland limitations)
 pub fn calculate_bubble_position(app: &AppHandle) -> Result<(f64, f64), String> {
-    // Get primary monitor
     let monitor = app
         .primary_monitor()
         .map_err(|e| e.to_string())?
         .ok_or("No primary monitor")?;
 
-    let size = monitor.size();
+    // Use work_area instead of size - respects taskbars/panels
+    let work_area = monitor.work_area();
     let scale = monitor.scale_factor();
-    let width = size.width as f64 / scale;
-    let height = size.height as f64 / scale;
+    let work_area_width = work_area.size.width as f64 / scale;
+    let work_area_height = work_area.size.height as f64 / scale;
+    let work_area_x = work_area.position.x as f64 / scale;
+    let work_area_y = work_area.position.y as f64 / scale;
 
-    // Get bubble position setting
     let state = app.state::<AppState>();
     let position = state.with_settings(|s| s.ui.bubble.position);
 
-    // Center horizontally
-    let x = (width - BUBBLE_SIZE) / 2.0;
+    // Center horizontally within work area
+    let x = work_area_x + (work_area_width - BUBBLE_SIZE) / 2.0;
 
-    // Vertical position based on setting
+    // Vertical position based on setting, relative to work area
     let y = match position {
-        BubblePosition::Top => BUBBLE_OFFSET,
-        BubblePosition::Center => (height - BUBBLE_SIZE) / 2.0,
-        BubblePosition::Bottom | BubblePosition::None => height - BUBBLE_SIZE - BUBBLE_OFFSET,
+        BubblePosition::Top => work_area_y + BUBBLE_OFFSET,
+        BubblePosition::Center => work_area_y + (work_area_height - BUBBLE_SIZE) / 2.0,
+        BubblePosition::Bottom | BubblePosition::None => {
+            work_area_y + work_area_height - BUBBLE_SIZE - BUBBLE_OFFSET
+        }
     };
 
     Ok((x, y))
