@@ -92,6 +92,10 @@ impl Settings {
         }
 
         // Post-processing settings
+        if let Some(Value::Bool(enabled)) = map.get("post_processing_enabled") {
+            settings.post_processing.enabled = *enabled;
+        }
+
         if let Some(Value::String(processor)) = map.get("post_processor")
             && let Ok(p) = processor.parse::<PostProcessor>()
         {
@@ -173,6 +177,10 @@ impl Settings {
         }
 
         // Post-processing settings
+        map.insert(
+            "post_processing_enabled".to_string(),
+            Value::Bool(self.post_processing.enabled),
+        );
         map.insert(
             "post_processor".to_string(),
             Value::String(self.post_processing.processor.to_string()),

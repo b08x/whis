@@ -66,22 +66,28 @@ impl TranscriptionSettings {
     /// 1. api_keys map
     /// 2. Environment variable
     pub fn api_key_for(&self, provider: &TranscriptionProvider) -> Option<String> {
-        // Normalize provider for API key lookup (realtime variants share keys with base provider)
-        let key_provider = match provider {
-            TranscriptionProvider::OpenAIRealtime => "openai",
-            TranscriptionProvider::DeepgramRealtime => "deepgram",
-            _ => provider.as_str(),
-        };
-
-        // Check api_keys map first
-        if let Some(key) = self.api_keys.get(key_provider)
-            && !key.is_empty()
-        {
-            return Some(key.clone());
+        // Check api_keys map first (no env var fallback)
+        if let Some(key) = self.api_key_from_settings_for(provider) {
+            return Some(key);
         }
 
         // Fall back to environment variable
         std::env::var(provider.api_key_env_var()).ok()
+    }
+
+    /// Get the API key for the current provider from settings only (no env var fallback).
+    ///
+    /// Used by desktop app which doesn't support env var configuration.
+    pub fn api_key_from_settings(&self) -> Option<String> {
+        self.api_key_from_settings_for(&self.provider)
+    }
+
+    /// Get the API key for a specific provider from settings only (no env var fallback).
+    pub fn api_key_from_settings_for(&self, provider: &TranscriptionProvider) -> Option<String> {
+        self.api_keys
+            .get(provider.api_key_name())
+            .filter(|k| !k.is_empty())
+            .cloned()
     }
 
     /// Check if an API key is explicitly configured in settings (not just in environment).
@@ -91,28 +97,15 @@ impl TranscriptionSettings {
     /// - [configured]: Key in settings.json
     /// - [available]: Key only in environment variable
     pub fn has_configured_api_key(&self, provider: &TranscriptionProvider) -> bool {
-        // Normalize provider (realtime variants share keys with base provider)
-        let key_provider = match provider {
-            TranscriptionProvider::OpenAIRealtime => "openai",
-            TranscriptionProvider::DeepgramRealtime => "deepgram",
-            _ => provider.as_str(),
-        };
-
         self.api_keys
-            .get(key_provider)
+            .get(provider.api_key_name())
             .map(|k| !k.is_empty())
             .unwrap_or(false)
     }
 
     /// Set the API key for a provider.
     pub fn set_api_key(&mut self, provider: &TranscriptionProvider, key: String) {
-        // Normalize provider (realtime variants share keys with base provider)
-        let key_provider = match provider {
-            TranscriptionProvider::OpenAIRealtime => "openai",
-            TranscriptionProvider::DeepgramRealtime => "deepgram",
-            _ => provider.as_str(),
-        };
-        self.api_keys.insert(key_provider.to_string(), key);
+        self.api_keys.insert(provider.api_key_name().to_string(), key);
     }
 
     /// Check if an API key is configured for the current provider.

@@ -87,7 +87,10 @@ impl TranscriptionProvider {
         }
     }
 
-    /// List all available providers (ordered by recommendation)
+    /// List all available providers in recommended order.
+    ///
+    /// Ordering: Deepgram first (generous free tier, real-time optimized),
+    /// then OpenAI (widely used), followed by other cloud options.
     pub fn all() -> &'static [TranscriptionProvider] {
         &[
             TranscriptionProvider::Deepgram,
@@ -100,6 +103,16 @@ impl TranscriptionProvider {
             TranscriptionProvider::LocalWhisper,
             TranscriptionProvider::LocalParakeet,
         ]
+    }
+
+    /// List cloud providers for UI dropdowns (ordered by recommendation).
+    ///
+    /// Excludes local providers and realtime variants (realtime is typically
+    /// toggled separately in the UI rather than shown as a separate provider).
+    pub fn cloud_providers() -> impl Iterator<Item = &'static TranscriptionProvider> {
+        Self::all()
+            .iter()
+            .filter(|p| !p.is_local() && !p.as_str().contains("realtime"))
     }
 
     /// Human-readable display name for this provider
@@ -131,6 +144,19 @@ impl TranscriptionProvider {
             self,
             TranscriptionProvider::LocalWhisper | TranscriptionProvider::LocalParakeet
         )
+    }
+
+    /// Get the API key name for this provider.
+    ///
+    /// Realtime variants share API keys with their base providers:
+    /// - `OpenAIRealtime` → "openai"
+    /// - `DeepgramRealtime` → "deepgram"
+    pub fn api_key_name(&self) -> &'static str {
+        match self {
+            Self::OpenAIRealtime => "openai",
+            Self::DeepgramRealtime => "deepgram",
+            _ => self.as_str(),
+        }
     }
 }
 

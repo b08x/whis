@@ -55,14 +55,17 @@ pub const DEFAULT_LANGUAGE: Option<&str> = None;
 // POST-PROCESSING DEFAULTS
 // =============================================================================
 
-/// Default post-processor (None = disabled by default)
+/// Default post-processor provider when enabled
 ///
-/// Post-processing is disabled by default to keep the workflow simple.
-/// Users can enable it via `whis config post-processor <provider>`.
+/// **Current:** OpenAI (since 2026-01-11)
+///
+/// **Rationale:** OpenAI provides excellent grammar and filler word cleanup.
+/// Post-processing is disabled by default (via `enabled: false` in settings),
+/// but when users enable it, OpenAI is the recommended starting point.
 ///
 /// **Note:** The default post-processing prompt is defined in
 /// `post_processing.rs` as `DEFAULT_POST_PROCESSING_PROMPT`.
-pub const DEFAULT_POST_PROCESSOR: PostProcessor = PostProcessor::None;
+pub const DEFAULT_POST_PROCESSOR: PostProcessor = PostProcessor::OpenAI;
 
 // =============================================================================
 // UI DEFAULTS

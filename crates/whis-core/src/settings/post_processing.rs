@@ -8,8 +8,12 @@ use crate::post_processing::PostProcessor;
 /// Settings for post-processing transcripts with LLMs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PostProcessingSettings {
-    /// LLM provider for post-processing (grammar, punctuation, filler word removal)
+    /// Whether post-processing is enabled
     #[serde(default)]
+    pub enabled: bool,
+
+    /// LLM provider for post-processing (grammar, punctuation, filler word removal)
+    #[serde(default = "default_processor")]
     pub processor: PostProcessor,
 
     /// Custom prompt for post-processing (uses default if None)
@@ -17,9 +21,14 @@ pub struct PostProcessingSettings {
     pub prompt: Option<String>,
 }
 
+fn default_processor() -> PostProcessor {
+    crate::configuration::DEFAULT_POST_PROCESSOR
+}
+
 impl Default for PostProcessingSettings {
     fn default() -> Self {
         Self {
+            enabled: false,
             processor: crate::configuration::DEFAULT_POST_PROCESSOR,
             prompt: Some(crate::transcription::DEFAULT_POST_PROCESSING_PROMPT.to_string()),
         }
@@ -34,24 +43,34 @@ impl PostProcessingSettings {
         &self,
         transcription_api_keys: &std::collections::HashMap<String, String>,
     ) -> Option<String> {
+        // Check settings first (no env var fallback)
+        if let Some(key) = self.api_key_from_settings(transcription_api_keys) {
+            return Some(key);
+        }
+
+        // Fall back to environment variable
         match &self.processor {
             PostProcessor::None | PostProcessor::Ollama => None,
             PostProcessor::OpenAI => {
-                // Check transcription settings API keys first
-                if let Some(key) = transcription_api_keys.get("openai") {
-                    return Some(key.clone());
-                }
-                // Fall back to environment variable
                 std::env::var(TranscriptionProvider::OpenAI.api_key_env_var()).ok()
             }
             PostProcessor::Mistral => {
-                // Check transcription settings API keys first
-                if let Some(key) = transcription_api_keys.get("mistral") {
-                    return Some(key.clone());
-                }
-                // Fall back to environment variable
                 std::env::var(TranscriptionProvider::Mistral.api_key_env_var()).ok()
             }
+        }
+    }
+
+    /// Get the API key for the post-processor from settings only (no env var fallback).
+    ///
+    /// Used by desktop app which doesn't support env var configuration.
+    pub fn api_key_from_settings(
+        &self,
+        transcription_api_keys: &std::collections::HashMap<String, String>,
+    ) -> Option<String> {
+        match &self.processor {
+            PostProcessor::None | PostProcessor::Ollama => None,
+            PostProcessor::OpenAI => transcription_api_keys.get("openai").cloned(),
+            PostProcessor::Mistral => transcription_api_keys.get("mistral").cloned(),
         }
     }
 

@@ -84,12 +84,39 @@ impl Settings {
     /// Load settings from disk.
     ///
     /// Returns default settings if file doesn't exist or cannot be parsed.
+    /// On parse failure, creates a numbered backup (backup, backup.1, backup.2, etc.)
+    /// to preserve the original file before defaults are applied.
     pub fn load() -> Self {
         let path = Self::path();
-        if let Ok(content) = fs::read_to_string(&path)
-            && let Ok(settings) = serde_json::from_str(&content)
-        {
-            return settings;
+        if let Ok(content) = fs::read_to_string(&path) {
+            match serde_json::from_str(&content) {
+                Ok(settings) => return settings,
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Failed to parse {}: {}",
+                        path.display(),
+                        e
+                    );
+                    eprintln!("Schema may have changed. Creating backup...");
+
+                    // Create numbered backup (backup, backup.1, backup.2, etc.)
+                    let backup_base = path.with_extension("json.backup");
+                    let backup_path = if !backup_base.exists() {
+                        backup_base
+                    } else {
+                        (1..)
+                            .map(|n| path.with_extension(format!("json.backup.{}", n)))
+                            .find(|p| !p.exists())
+                            .unwrap_or(backup_base)
+                    };
+
+                    if let Err(backup_err) = fs::copy(&path, &backup_path) {
+                        eprintln!("Failed to create backup: {}", backup_err);
+                    } else {
+                        eprintln!("Backup saved to: {}", backup_path.display());
+                    }
+                }
+            }
         }
         Self::default()
     }
