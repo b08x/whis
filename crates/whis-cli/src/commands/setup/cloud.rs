@@ -16,7 +16,21 @@ use anyhow::{Result, anyhow};
 use whis_core::{Settings, TranscriptionProvider};
 
 use super::interactive;
-use super::provider_helpers::{CLOUD_PROVIDERS, api_key_url, provider_description};
+use super::provider_helpers::{api_key_url, cloud_providers, provider_description};
+
+/// Prompt for streaming method selection (Standard vs Streaming)
+///
+/// Returns the realtime variant if streaming selected, otherwise the base provider.
+fn select_streaming_method(
+    base: TranscriptionProvider,
+    realtime: TranscriptionProvider,
+    current: &TranscriptionProvider,
+) -> Result<TranscriptionProvider> {
+    let methods = vec!["Standard - Progressive", "Streaming - Real-time"];
+    let default_method = if *current == realtime { 1 } else { 0 };
+    let choice = interactive::select("Which method?", &methods, Some(default_method))?;
+    Ok(if choice == 1 { realtime } else { base })
+}
 
 /// Prompt for and validate an API key
 pub fn prompt_and_validate_key(provider: &TranscriptionProvider) -> Result<String> {
@@ -60,9 +74,10 @@ pub fn prompt_and_validate_key(provider: &TranscriptionProvider) -> Result<Strin
 /// Used by the unified wizard
 pub fn setup_transcription_cloud() -> Result<()> {
     let mut settings = Settings::load();
+    let providers = cloud_providers();
 
     // Build provider display items: with markers for selection, just name for confirmation
-    let (items, clean_items): (Vec<String>, Vec<String>) = CLOUD_PROVIDERS
+    let (items, clean_items): (Vec<String>, Vec<String>) = providers
         .iter()
         .map(|provider| {
             let display = format!(
@@ -92,7 +107,7 @@ pub fn setup_transcription_cloud() -> Result<()> {
 
     // Default to current provider if configured
     // Treat realtime variants same as base provider for default selection
-    let default = CLOUD_PROVIDERS.iter().position(|p| {
+    let default = providers.iter().position(|p| {
         *p == settings.transcription.provider
             || (*p == TranscriptionProvider::OpenAI
                 && settings.transcription.provider == TranscriptionProvider::OpenAIRealtime)
@@ -102,49 +117,28 @@ pub fn setup_transcription_cloud() -> Result<()> {
 
     // Fallback: if on local provider, find first cloud provider with configured API key
     let default = default.or_else(|| {
-        CLOUD_PROVIDERS
+        providers
             .iter()
             .position(|p| settings.transcription.api_key_for(p).is_some())
     });
 
     let choice = interactive::select_clean("Which provider?", &items, &clean_items, default)?;
-    let mut provider = CLOUD_PROVIDERS[choice].clone();
+    let mut provider = providers[choice].clone();
 
-    // If OpenAI selected, ask for method (Standard vs Streaming)
-    if provider == TranscriptionProvider::OpenAI {
-        let methods = vec!["Standard - Progressive", "Streaming - Real-time"];
-
-        // Default to current method if already using OpenAI variant
-        let default_method =
-            if settings.transcription.provider == TranscriptionProvider::OpenAIRealtime {
-                1
-            } else {
-                0
-            };
-
-        let method_choice = interactive::select("Which method?", &methods, Some(default_method))?;
-        if method_choice == 1 {
-            provider = TranscriptionProvider::OpenAIRealtime;
-        }
-    }
-
-    // If Deepgram selected, ask for method (Standard vs Streaming)
-    if provider == TranscriptionProvider::Deepgram {
-        let methods = vec!["Standard - Progressive", "Streaming - Real-time"];
-
-        // Default to current method if already using Deepgram variant
-        let default_method =
-            if settings.transcription.provider == TranscriptionProvider::DeepgramRealtime {
-                1
-            } else {
-                0
-            };
-
-        let method_choice = interactive::select("Which method?", &methods, Some(default_method))?;
-        if method_choice == 1 {
-            provider = TranscriptionProvider::DeepgramRealtime;
-        }
-    }
+    // If OpenAI or Deepgram selected, ask for method (Standard vs Streaming)
+    provider = match provider {
+        TranscriptionProvider::OpenAI => select_streaming_method(
+            TranscriptionProvider::OpenAI,
+            TranscriptionProvider::OpenAIRealtime,
+            &settings.transcription.provider,
+        )?,
+        TranscriptionProvider::Deepgram => select_streaming_method(
+            TranscriptionProvider::Deepgram,
+            TranscriptionProvider::DeepgramRealtime,
+            &settings.transcription.provider,
+        )?,
+        _ => provider,
+    };
 
     // Check if API key already exists for this provider
     if let Some(existing_key) = settings.transcription.api_key_for(&provider) {

@@ -29,7 +29,7 @@ use crate::app::TranscriptionConfig;
 use crate::ipc::{IpcMessage, IpcResponse, IpcServer};
 use std::time::Duration;
 use whis_core::{
-    AudioRecorder, DEFAULT_POST_PROCESSING_PROMPT, PostProcessor, Settings, TranscriptionProvider,
+    AudioRecorder, DEFAULT_POST_PROCESSING_PROMPT, Settings, TranscriptionProvider,
     copy_to_clipboard, post_process,
 };
 
@@ -333,9 +333,9 @@ impl Service {
         // Print completion message immediately after transcription finishes
         println!("#{count} Done.");
 
-        // Apply post-processing if configured
+        // Apply post-processing if enabled
         let settings = Settings::load();
-        let final_text = if settings.post_processing.processor != PostProcessor::None {
+        let final_text = if settings.post_processing.enabled {
             if let Some(post_processor_api_key) = settings
                 .post_processing
                 .api_key(&settings.transcription.api_keys)
