@@ -413,60 +413,85 @@ function setChunkDuration(value: number) {
   state.ui.chunk_duration_secs = Math.max(10, Math.min(300, value))
 }
 
+// Post-processing orchestration methods
+function enablePostProcessing() {
+  state.post_processing.enabled = true
+}
+
+function disablePostProcessing() {
+  state.post_processing.enabled = false
+  // Keep active_preset - user can re-enable without losing preset selection
+}
+
+async function applyPreset(name: string): Promise<void> {
+  // Backend updates prompt, processor, and active_preset
+  await invoke('apply_preset', { name })
+
+  // Reload settings to get backend changes
+  await load()
+
+  // Enable post-processing when applying a preset
+  state.post_processing.enabled = true
+}
+
+async function clearPreset(): Promise<void> {
+  // Clear active preset in backend
+  await invoke('set_active_preset', { name: null })
+
+  // Reload settings
+  await load()
+
+  // Disable post-processing when clearing preset
+  state.post_processing.enabled = false
+}
+
 // Window visibility state (for smooth show/hide transitions on Wayland)
 function setWindowVisible(visible: boolean) {
   state.windowVisible = visible
 }
 
-// Download state management - Whisper
-function startWhisperDownload(model: string) {
-  state.whisperDownload.active = true
-  state.whisperDownload.model = model
-  state.whisperDownload.progress = null
-  state.whisperDownload.error = null
-}
+// Download state management factory
+type DownloadKey = 'whisperDownload' | 'parakeetDownload'
 
-function updateWhisperDownloadProgress(downloaded: number, total: number) {
-  if (state.whisperDownload.active) {
-    state.whisperDownload.progress = { downloaded, total }
+function createDownloadManager(key: DownloadKey) {
+  return {
+    start(model: string) {
+      state[key].active = true
+      state[key].model = model
+      state[key].progress = null
+      state[key].error = null
+    },
+    updateProgress(downloaded: number, total: number) {
+      if (state[key].active) {
+        state[key].progress = { downloaded, total }
+      }
+    },
+    complete() {
+      state[key].active = false
+      state[key].progress = null
+      state[key].model = null
+    },
+    fail(error: string) {
+      state[key].active = false
+      state[key].error = error
+    },
   }
 }
 
-function completeWhisperDownload() {
-  state.whisperDownload.active = false
-  state.whisperDownload.progress = null
-  state.whisperDownload.model = null
-}
+const whisperDownloadManager = createDownloadManager('whisperDownload')
+const parakeetDownloadManager = createDownloadManager('parakeetDownload')
 
-function failWhisperDownload(error: string) {
-  state.whisperDownload.active = false
-  state.whisperDownload.error = error
-}
+// Download state management - Whisper (backwards-compatible exports)
+const startWhisperDownload = whisperDownloadManager.start
+const updateWhisperDownloadProgress = whisperDownloadManager.updateProgress
+const completeWhisperDownload = whisperDownloadManager.complete
+const failWhisperDownload = whisperDownloadManager.fail
 
-// Download state management - Parakeet
-function startParakeetDownload(model: string) {
-  state.parakeetDownload.active = true
-  state.parakeetDownload.model = model
-  state.parakeetDownload.progress = null
-  state.parakeetDownload.error = null
-}
-
-function updateParakeetDownloadProgress(downloaded: number, total: number) {
-  if (state.parakeetDownload.active) {
-    state.parakeetDownload.progress = { downloaded, total }
-  }
-}
-
-function completeParakeetDownload() {
-  state.parakeetDownload.active = false
-  state.parakeetDownload.progress = null
-  state.parakeetDownload.model = null
-}
-
-function failParakeetDownload(error: string) {
-  state.parakeetDownload.active = false
-  state.parakeetDownload.error = error
-}
+// Download state management - Parakeet (backwards-compatible exports)
+const startParakeetDownload = parakeetDownloadManager.start
+const updateParakeetDownloadProgress = parakeetDownloadManager.updateProgress
+const completeParakeetDownload = parakeetDownloadManager.complete
+const failParakeetDownload = parakeetDownloadManager.fail
 
 // Getter for default provider (used by SettingsView when switching modes)
 function getDefaultProvider(): Provider {
@@ -506,6 +531,12 @@ export const settingsStore = {
   setBubblePosition,
   setChunkDuration,
   setWindowVisible,
+
+  // Post-processing orchestration
+  enablePostProcessing,
+  disablePostProcessing,
+  applyPreset,
+  clearPreset,
 
   // Download state management
   startWhisperDownload,

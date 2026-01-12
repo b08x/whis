@@ -358,27 +358,6 @@ function handleOllamaModelChange(value: string | null) {
 </template>
 
 <style scoped>
-.field-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.field-row > label {
-  width: var(--field-label-width);
-  flex-shrink: 0;
-  font-size: 12px;
-  color: var(--text-weak);
-}
-
-.field-row > input {
-  flex: 1;
-}
-
-.field-row :deep(.custom-select) {
-  flex: 1;
-}
-
 .url-config {
   display: flex;
   gap: 8px;

@@ -461,9 +461,9 @@ function handleBubblePositionChange(value: string | null) {
       </div>
 
       <!-- Help Panel -->
-      <div class="help-panel" :class="{ open: helpOpen }">
-        <div class="panel-content">
-          <div class="panel-header">
+      <div class="help-panel slide-panel" :class="{ open: helpOpen }">
+        <div class="slide-panel-content">
+          <div class="slide-panel-header">
             <h2>Help</h2>
           </div>
 
@@ -568,27 +568,6 @@ function handleBubblePositionChange(value: string | null) {
   border-bottom: 1px solid var(--border);
 }
 
-.field-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.field-row > label {
-  width: var(--field-label-width);
-  flex-shrink: 0;
-  font-size: 12px;
-  color: var(--text-weak);
-}
-
-.field-row > input {
-  flex: 1;
-}
-
-.field-row :deep(.custom-select) {
-  flex: 1;
-}
-
 .settings-layout {
   display: flex;
   flex: 1;
@@ -628,44 +607,10 @@ function handleBubblePositionChange(value: string | null) {
   color: var(--accent);
 }
 
-/* Help Panel */
-.help-panel {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 320px;
-  background: var(--bg);
-  border-left: 1px solid var(--border);
-  transform: translateX(100%);
-  transition: transform 0.2s ease-out;
-  overflow-y: auto;
-}
-
-.help-panel.open {
-  transform: translateX(0);
-}
-
-.panel-content {
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+/* Help Panel - uses global .slide-panel styles */
+.help-panel .slide-panel-header {
   padding-bottom: 12px;
   border-bottom: 1px solid var(--border);
-}
-
-.panel-header h2 {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-strong);
-  margin: 0;
 }
 
 .help-section {

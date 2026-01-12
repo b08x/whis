@@ -406,6 +406,125 @@ body {
   font-weight: 500;
   color: var(--accent);
 }
+
+/* Field row - horizontal label + input layout */
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.field-row > label {
+  width: var(--field-label-width);
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-weak);
+}
+
+.field-row > input {
+  flex: 1;
+}
+
+.field-row :deep(.custom-select) {
+  flex: 1;
+}
+
+/* Sliding panel pattern */
+.slide-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 320px;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  transform: translateX(100%);
+  transition: transform 0.2s ease-out;
+  overflow-y: auto;
+}
+
+.slide-panel.open {
+  transform: translateX(0);
+}
+
+.slide-panel-content {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.slide-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.slide-panel-header h2 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin: 0;
+}
+
+/* Panel form field */
+.panel-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.panel-field label {
+  font-size: 11px;
+  color: var(--text-weak);
+  text-transform: lowercase;
+}
+
+.panel-field p {
+  font-size: 12px;
+  color: var(--text);
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Primary action button (accent color) */
+.btn-accent {
+  padding: 8px 16px;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font-family: var(--font);
+  font-size: 12px;
+  color: var(--bg);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-accent:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.btn-accent:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Danger button */
+.btn-danger {
+  background: transparent;
+  border: 1px solid var(--danger, #e74c3c);
+  color: var(--danger, #e74c3c);
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-family: var(--font);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: rgba(231, 76, 60, 0.1);
+}
 </style>
 
 <style scoped>

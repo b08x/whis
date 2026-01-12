@@ -3,13 +3,17 @@ import type { PresetDetails, PresetInfo, SelectOption } from '../types'
 import { invoke } from '@tauri-apps/api/core'
 import { computed, onMounted, ref } from 'vue'
 import AppSelect from '../components/AppSelect.vue'
+import PostProcessingToggle from '../components/settings/PostProcessingToggle.vue'
 import { settingsStore } from '../stores/settings'
+import { POST_PROCESSOR_OPTIONS } from '../utils/constants'
 
 // List state
 const presets = ref<PresetInfo[]>([])
-const activePreset = ref<string | null>(null)
 const loading = ref(true)
 const applyingPreset = ref<string | null>(null)
+
+// Active preset from store (single source of truth)
+const activePreset = computed(() => settingsStore.state.ui.active_preset)
 
 // Panel state
 const panelOpen = ref(false)
@@ -30,13 +34,11 @@ const error = ref<string | null>(null)
 const confirmingDelete = ref(false)
 const deleting = ref(false)
 
-// Post-processor options for select
-const postProcessorOptions: SelectOption[] = [
+// Preset-specific processor options (extends base options with auto/none)
+const presetProcessorOptions: SelectOption[] = [
   { value: null, label: 'Automatic (use settings)' },
   { value: 'none', label: 'Disabled (raw transcript)' },
-  { value: 'openai', label: 'OpenAI (cloud)' },
-  { value: 'mistral', label: 'Mistral (cloud)' },
-  { value: 'ollama', label: 'Ollama (local)' },
+  ...POST_PROCESSOR_OPTIONS,
 ]
 
 // Computed
@@ -47,7 +49,7 @@ const canEdit = computed(() => selectedPreset.value && !selectedPreset.value.is_
 async function loadPresets() {
   try {
     presets.value = await invoke<PresetInfo[]>('list_presets')
-    activePreset.value = await invoke<string | null>('get_active_preset')
+    // activePreset is now a computed from settingsStore, no need to load separately
   }
   catch (e) {
     console.error('Failed to load presets:', e)
@@ -182,13 +184,12 @@ async function savePreset() {
   }
 }
 
-// Apply preset (makes it active and applies its settings)
+// Apply preset (makes it active, applies settings, and enables post-processing)
 async function applyPreset(name: string) {
   applyingPreset.value = name
   try {
-    await invoke('apply_preset', { name })
-    activePreset.value = name
-    await settingsStore.load()
+    await settingsStore.applyPreset(name)
+    // activePreset is a computed from settingsStore, automatically updated
   }
   catch (e) {
     console.error('Failed to apply preset:', e)
@@ -199,12 +200,11 @@ async function applyPreset(name: string) {
   }
 }
 
-// Clear active preset
+// Clear active preset (also disables post-processing)
 async function clearPreset() {
   try {
-    await invoke('set_active_preset', { name: null })
-    activePreset.value = null
-    await settingsStore.load()
+    await settingsStore.clearPreset()
+    // activePreset is a computed from settingsStore, automatically updated
   }
   catch (e) {
     console.error('Failed to clear preset:', e)
@@ -250,6 +250,9 @@ onMounted(loadPresets)
       </button>
     </header>
 
+    <!-- Post-processing toggle (synced with Settings page) -->
+    <PostProcessingToggle class="presets-toggle" />
+
     <div class="presets-layout">
       <!-- Presets list -->
       <div class="presets-list-container">
@@ -292,10 +295,10 @@ onMounted(loadPresets)
       </div>
 
       <!-- Sliding detail panel -->
-      <div class="detail-panel" :class="{ open: panelOpen }">
-        <div class="panel-content">
+      <div class="slide-panel" :class="{ open: panelOpen }">
+        <div class="slide-panel-content">
           <!-- Panel header -->
-          <div class="panel-header">
+          <div class="slide-panel-header">
             <h2 v-if="panelMode === 'create'">
               New Preset
             </h2>
@@ -319,24 +322,24 @@ onMounted(loadPresets)
 
           <!-- View mode -->
           <template v-if="!isEditing && selectedPreset">
-            <div class="detail-field">
+            <div class="panel-field">
               <label>Description</label>
               <p>{{ selectedPreset.description }}</p>
             </div>
 
-            <div class="detail-field">
+            <div class="panel-field">
               <label>Prompt</label>
               <p class="prompt-text">
                 {{ selectedPreset.prompt || '(empty)' }}
               </p>
             </div>
 
-            <div v-if="selectedPreset.post_processor" class="detail-field">
+            <div v-if="selectedPreset.post_processor" class="panel-field">
               <label>Post-processor override</label>
               <p>{{ selectedPreset.post_processor }}</p>
             </div>
 
-            <div v-if="selectedPreset.model" class="detail-field">
+            <div v-if="selectedPreset.model" class="panel-field">
               <label>Model override</label>
               <p>{{ selectedPreset.model }}</p>
             </div>
@@ -344,7 +347,7 @@ onMounted(loadPresets)
             <!-- Actions -->
             <div class="panel-actions">
               <button
-                class="btn-primary"
+                class="btn-accent"
                 :disabled="applyingPreset !== null"
                 @click="applyPreset(selectedPreset.name)"
               >
@@ -369,10 +372,10 @@ onMounted(loadPresets)
                 </button>
                 <div v-else class="delete-confirm">
                   <span>Delete?</span>
-                  <button class="btn-danger-sm" :disabled="deleting" @click="deletePreset">
+                  <button class="btn-danger btn-sm" :disabled="deleting" @click="deletePreset">
                     {{ deleting ? '...' : 'Yes' }}
                   </button>
-                  <button class="btn-secondary-sm" @click="confirmingDelete = false">
+                  <button class="btn-secondary btn-sm" @click="confirmingDelete = false">
                     No
                   </button>
                 </div>
@@ -382,7 +385,7 @@ onMounted(loadPresets)
 
           <!-- Edit/Create mode -->
           <template v-if="isEditing">
-            <div class="edit-field">
+            <div class="panel-field">
               <label for="edit-name">Name</label>
               <input
                 id="edit-name"
@@ -393,7 +396,7 @@ onMounted(loadPresets)
               >
             </div>
 
-            <div class="edit-field">
+            <div class="panel-field">
               <label for="edit-description">Description</label>
               <input
                 id="edit-description"
@@ -402,7 +405,7 @@ onMounted(loadPresets)
               >
             </div>
 
-            <div class="edit-field">
+            <div class="panel-field">
               <label for="edit-prompt">Prompt</label>
               <textarea
                 id="edit-prompt"
@@ -415,17 +418,17 @@ onMounted(loadPresets)
             <details class="advanced-section">
               <summary>Advanced options</summary>
 
-              <div class="edit-field">
+              <div class="panel-field">
                 <label>Post-processor override</label>
                 <AppSelect
                   :model-value="editPostProcessor"
-                  :options="postProcessorOptions"
+                  :options="presetProcessorOptions"
                   aria-label="Post-processor override"
                   @update:model-value="editPostProcessor = $event"
                 />
               </div>
 
-              <div class="edit-field">
+              <div class="panel-field">
                 <label for="edit-model">Model override</label>
                 <input
                   id="edit-model"
@@ -438,7 +441,7 @@ onMounted(loadPresets)
             <!-- Edit actions -->
             <div class="panel-actions">
               <button
-                class="btn-primary"
+                class="btn-accent"
                 :disabled="saving || !editName.trim() || !editDescription.trim()"
                 @click="savePreset"
               >
@@ -464,6 +467,14 @@ onMounted(loadPresets)
   height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+.presets-toggle {
+  padding: 12px;
+  background: var(--bg-weak);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 12px;
 }
 
 .presets-layout {
@@ -608,44 +619,7 @@ onMounted(loadPresets)
   color: var(--text);
 }
 
-/* Detail Panel */
-.detail-panel {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 320px;
-  background: var(--bg);
-  border-left: 1px solid var(--border);
-  transform: translateX(100%);
-  transition: transform 0.2s ease-out;
-  overflow-y: auto;
-}
-
-.detail-panel.open {
-  transform: translateX(0);
-}
-
-.panel-content {
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.panel-header h2 {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-strong);
-  margin: 0;
-}
-
+/* Panel state messages */
 .panel-loading,
 .panel-error {
   font-size: 12px;
@@ -662,25 +636,7 @@ onMounted(loadPresets)
   border-radius: 4px;
 }
 
-.detail-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.detail-field label {
-  font-size: 11px;
-  color: var(--text-weak);
-  text-transform: lowercase;
-}
-
-.detail-field p {
-  font-size: 12px;
-  color: var(--text);
-  margin: 0;
-  line-height: 1.4;
-}
-
+/* Prompt text display */
 .prompt-text {
   background: var(--bg-weak);
   padding: 8px;
@@ -691,22 +647,10 @@ onMounted(loadPresets)
   overflow-y: auto;
 }
 
-/* Edit form */
-.edit-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.edit-field label {
-  font-size: 11px;
-  color: var(--text-weak);
-  text-transform: lowercase;
-}
-
-.edit-field input,
-.edit-field textarea,
-.edit-field select {
+/* Panel form inputs */
+.panel-field input,
+.panel-field textarea,
+.panel-field select {
   padding: 8px 10px;
   background: var(--bg-weak);
   border: 1px solid var(--border);
@@ -716,23 +660,24 @@ onMounted(loadPresets)
   color: var(--text);
 }
 
-.edit-field input:focus,
-.edit-field textarea:focus,
-.edit-field select:focus {
+.panel-field input:focus,
+.panel-field textarea:focus,
+.panel-field select:focus {
   outline: none;
   border-color: var(--accent);
 }
 
-.edit-field input.disabled {
+.panel-field input.disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.edit-field textarea {
+.panel-field textarea {
   resize: vertical;
   min-height: 100px;
 }
 
+/* Advanced options */
 .advanced-section {
   margin-top: 8px;
 }
@@ -754,7 +699,7 @@ onMounted(loadPresets)
   gap: 12px;
 }
 
-/* Actions */
+/* Actions bar */
 .panel-actions {
   display: flex;
   gap: 8px;
@@ -764,53 +709,7 @@ onMounted(loadPresets)
   border-top: 1px solid var(--border);
 }
 
-.btn-primary,
-.btn-secondary,
-.btn-danger {
-  padding: 8px 16px;
-  border-radius: 4px;
-  font-family: var(--font);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.btn-primary {
-  background: var(--accent);
-  border: 1px solid var(--accent);
-  color: var(--bg);
-}
-
-.btn-primary:hover:not(:disabled) {
-  opacity: 0.9;
-}
-
-.btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-secondary {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text);
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background: var(--bg-weak);
-  border-color: var(--text-weak);
-}
-
-.btn-danger {
-  background: transparent;
-  border: 1px solid var(--danger, #e74c3c);
-  color: var(--danger, #e74c3c);
-}
-
-.btn-danger:hover:not(:disabled) {
-  background: rgba(231, 76, 60, 0.1);
-}
-
+/* Delete confirmation */
 .delete-confirm {
   display: flex;
   align-items: center;
@@ -819,24 +718,9 @@ onMounted(loadPresets)
   color: var(--text-weak);
 }
 
-.btn-danger-sm,
-.btn-secondary-sm {
+/* Small button modifier */
+.btn-sm {
   padding: 4px 10px;
-  border-radius: 4px;
-  font-family: var(--font);
   font-size: 11px;
-  cursor: pointer;
-}
-
-.btn-danger-sm {
-  background: var(--danger, #e74c3c);
-  border: none;
-  color: white;
-}
-
-.btn-secondary-sm {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text);
 }
 </style>
