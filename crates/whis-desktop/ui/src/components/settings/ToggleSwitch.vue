@@ -1,22 +1,32 @@
-<!-- ToggleSwitch: On/off toggle switch. Props: modelValue (boolean) -->
+<!-- ToggleSwitch: On/off toggle switch. Props: modelValue (boolean), disabled (boolean) -->
 <script setup lang="ts">
-defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: boolean
-}>()
+  disabled?: boolean
+}>(), {
+  disabled: false,
+})
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
 }>()
+
+function handleClick() {
+  if (!props.disabled) {
+    emit('update:modelValue', !props.modelValue)
+  }
+}
 </script>
 
 <template>
   <button
     class="toggle-switch"
-    :class="{ active: modelValue }"
+    :class="{ active: modelValue, disabled }"
     role="switch"
     :aria-checked="modelValue"
+    :disabled="disabled"
     type="button"
-    @click="emit('update:modelValue', !modelValue)"
+    @click="handleClick"
   >
     <span class="toggle-knob" />
   </button>
@@ -66,5 +76,15 @@ const emit = defineEmits<{
 .toggle-switch.active .toggle-knob {
   transform: translateX(12px);
   background: var(--bg);
+}
+
+.toggle-switch.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toggle-switch.disabled:hover {
+  border-color: var(--border);
+  background: var(--bg-weak);
 }
 </style>

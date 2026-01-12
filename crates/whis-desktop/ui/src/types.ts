@@ -49,6 +49,7 @@ export interface Settings {
     ollama: {
       url: string | null
       model: string | null
+      keep_alive: string | null
     }
   }
   shortcuts: {
@@ -68,6 +69,10 @@ export interface Settings {
     bubble: {
       enabled: boolean
       position: BubblePosition
+    }
+    model_memory: {
+      keep_model_loaded: boolean
+      unload_after_minutes: number
     }
   }
 }

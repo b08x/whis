@@ -69,6 +69,7 @@ function getDefaultSettings(): Settings {
       ollama: {
         url: defaults.ollama_url,
         model: defaults.ollama_model,
+        keep_alive: '5m',
       },
     },
     shortcuts: {
@@ -88,6 +89,10 @@ function getDefaultSettings(): Settings {
       bubble: {
         enabled: false,
         position: 'none' as BubblePosition,
+      },
+      model_memory: {
+        keep_model_loaded: true,
+        unload_after_minutes: 10,
       },
     },
   }
@@ -189,6 +194,7 @@ async function load() {
       ollama: {
         url: settings.services.ollama.url || defaults.ollama_url,
         model: settings.services.ollama.model || defaults.ollama_model,
+        keep_alive: settings.services.ollama.keep_alive || '5m',
       },
     }
     state.shortcuts = {
@@ -208,6 +214,10 @@ async function load() {
       bubble: {
         enabled: settings.ui.bubble?.enabled ?? false,
         position: settings.ui.bubble?.position ?? 'none',
+      },
+      model_memory: {
+        keep_model_loaded: settings.ui.model_memory?.keep_model_loaded ?? true,
+        unload_after_minutes: settings.ui.model_memory?.unload_after_minutes ?? 10,
       },
     }
   }
@@ -413,6 +423,18 @@ function setChunkDuration(value: number) {
   state.ui.chunk_duration_secs = Math.max(10, Math.min(300, value))
 }
 
+function setKeepModelLoaded(value: boolean) {
+  state.ui.model_memory.keep_model_loaded = value
+}
+
+function setUnloadAfterMinutes(value: number) {
+  state.ui.model_memory.unload_after_minutes = value
+}
+
+function setOllamaKeepAlive(value: string | null) {
+  state.services.ollama.keep_alive = value
+}
+
 // Post-processing orchestration methods
 function enablePostProcessing() {
   state.post_processing.enabled = true
@@ -530,6 +552,9 @@ export const settingsStore = {
   setBubbleEnabled,
   setBubblePosition,
   setChunkDuration,
+  setKeepModelLoaded,
+  setUnloadAfterMinutes,
+  setOllamaKeepAlive,
   setWindowVisible,
 
   // Post-processing orchestration

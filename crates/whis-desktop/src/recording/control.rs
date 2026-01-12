@@ -10,7 +10,7 @@ use tokio::sync::{mpsc, oneshot};
 use whis_core::progressive_transcribe_local;
 use whis_core::{
     AudioRecorder, ChunkerConfig, PostProcessor, ProgressiveChunker, Settings,
-    TranscriptionProvider, ollama, preload_ollama, progressive_transcribe_cloud,
+    TranscriptionProvider, progressive_transcribe_cloud,
 };
 
 /// Start recording with progressive transcription (default mode)
@@ -23,6 +23,9 @@ use whis_core::{
 /// The transcription result will be available via the oneshot channel
 /// stored in AppState when recording completes.
 pub fn start_recording_sync(_app: &AppHandle, state: &AppState) -> Result<(), String> {
+    // Cancel any pending idle model unload (user is recording again)
+    state.cancel_idle_unload();
+
     // Load transcription config if not already loaded
     let (provider, api_key, language) = {
         let mut config_guard = state.transcription_config.lock().unwrap();
@@ -48,6 +51,16 @@ pub fn start_recording_sync(_app: &AppHandle, state: &AppState) -> Result<(), St
         let settings = state.settings.lock().unwrap();
         settings.ui.vad.enabled && !is_realtime
     };
+
+    // Configure model memory settings for local transcription
+    #[cfg(feature = "local-transcription")]
+    {
+        let keep_loaded = {
+            let settings = state.settings.lock().unwrap();
+            settings.ui.model_memory.keep_model_loaded
+        };
+        provider.set_keep_loaded(keep_loaded);
+    }
     let vad_threshold = state.settings.lock().unwrap().ui.vad.threshold;
     recorder.set_vad(vad_enabled, vad_threshold);
 
@@ -98,18 +111,7 @@ pub fn start_recording_sync(_app: &AppHandle, state: &AppState) -> Result<(), St
 
         // Preload Ollama if post-processing enabled
         if settings.post_processing.processor == PostProcessor::Ollama {
-            let ollama_url = settings
-                .services
-                .ollama
-                .url()
-                .unwrap_or_else(|| ollama::DEFAULT_OLLAMA_URL.to_string());
-            let ollama_model = settings
-                .services
-                .ollama
-                .model()
-                .unwrap_or_else(|| ollama::DEFAULT_OLLAMA_MODEL.to_string());
-
-            preload_ollama(&ollama_url, &ollama_model);
+            settings.services.ollama.preload();
         }
 
         // Warm HTTP client for cloud providers to reduce first-request latency

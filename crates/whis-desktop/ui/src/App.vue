@@ -421,6 +421,10 @@ body {
   color: var(--text-weak);
 }
 
+.field-row > label.disabled {
+  opacity: 0.5;
+}
+
 .field-row > input {
   flex: 1;
 }

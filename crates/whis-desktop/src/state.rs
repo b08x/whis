@@ -39,6 +39,9 @@ pub struct AppState {
     pub active_download: Mutex<Option<DownloadState>>,
     /// Progressive transcription result receiver (if progressive mode active)
     pub transcription_rx: Mutex<Option<oneshot::Receiver<Result<String, String>>>>,
+    /// JoinHandle for pending idle model unload task (if any)
+    /// Used to cancel the unload when a new recording starts
+    pub idle_unload_handle: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     /// Guard for rdev::grab() keyboard listener (Linux only)
     #[cfg(target_os = "linux")]
     pub rdev_guard: Mutex<Option<RdevGrabGuard>>,
@@ -60,6 +63,7 @@ impl AppState {
             tray_available: Mutex::new(tray_available),
             active_download: Mutex::new(None),
             transcription_rx: Mutex::new(None),
+            idle_unload_handle: Mutex::new(None),
             #[cfg(target_os = "linux")]
             rdev_guard: Mutex::new(None),
             #[cfg(target_os = "linux")]
@@ -98,6 +102,20 @@ impl AppState {
     /// Check if tray is available
     pub fn is_tray_available(&self) -> bool {
         *self.tray_available.lock().unwrap()
+    }
+
+    /// Cancel any pending idle model unload task
+    pub fn cancel_idle_unload(&self) {
+        if let Some(handle) = self.idle_unload_handle.lock().unwrap().take() {
+            handle.abort();
+        }
+    }
+
+    /// Set the idle unload task handle
+    pub fn set_idle_unload_handle(&self, handle: tauri::async_runtime::JoinHandle<()>) {
+        // Cancel any existing unload task first
+        self.cancel_idle_unload();
+        *self.idle_unload_handle.lock().unwrap() = Some(handle);
     }
 }
 

@@ -45,6 +45,11 @@ export function useParakeetModel() {
       const installed = availableModels.value.find(m => m.installed)
       if (installed) {
         selectedModel.value = installed.name
+
+        // Auto-populate path if installed but not in settings
+        if (!parakeetModelPath.value && installed.path) {
+          settingsStore.setParakeetModelPath(installed.path)
+        }
       }
     }
     catch (e) {

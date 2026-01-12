@@ -288,6 +288,46 @@ function handleBubblePositionChange(value: string | null) {
     settingsStore.setBubblePosition(value as BubblePosition)
   }
 }
+
+// Model memory settings
+const keepModelLoaded = computed(() => settingsStore.state.ui.model_memory.keep_model_loaded)
+const unloadAfterMinutes = computed(() => settingsStore.state.ui.model_memory.unload_after_minutes)
+const ollamaKeepAlive = computed(() => settingsStore.state.services.ollama.keep_alive)
+
+// Disabled states for always-visible settings
+const isLocalMode = computed(() => transcriptionMode.value === 'local')
+const canUnloadAfter = computed(() => isLocalMode.value && keepModelLoaded.value)
+const isOllamaPostProcessor = computed(() => postProcessor.value === 'ollama')
+
+const unloadTimeoutOptions: SelectOption[] = [
+  { value: '5', label: '5 min' },
+  { value: '10', label: '10 min' },
+  { value: '30', label: '30 min' },
+  { value: '60', label: '60 min' },
+  { value: '0', label: 'Never' },
+]
+
+const ollamaKeepAliveOptions: SelectOption[] = [
+  { value: '0', label: 'Immediate' },
+  { value: '5m', label: '5 min' },
+  { value: '10m', label: '10 min' },
+  { value: '30m', label: '30 min' },
+  { value: '-1', label: 'Forever' },
+]
+
+function handleKeepModelLoadedChange(value: boolean) {
+  settingsStore.setKeepModelLoaded(value)
+}
+
+function handleUnloadAfterMinutesChange(value: string | null) {
+  if (value !== null) {
+    settingsStore.setUnloadAfterMinutes(Number.parseInt(value, 10))
+  }
+}
+
+function handleOllamaKeepAliveChange(value: string | null) {
+  settingsStore.setOllamaKeepAlive(value)
+}
 </script>
 
 <template>
@@ -377,6 +417,37 @@ function handleBubblePositionChange(value: string | null) {
             />
           </div>
 
+          <!-- Model Memory (always visible, disabled when not local) -->
+          <div class="field-row">
+            <label :class="{ disabled: !isLocalMode }">Keep Model Loaded</label>
+            <ToggleSwitch
+              :model-value="keepModelLoaded"
+              :disabled="!isLocalMode"
+              @update:model-value="handleKeepModelLoadedChange"
+            />
+          </div>
+
+          <div class="field-row">
+            <label :class="{ disabled: !canUnloadAfter }">Unload After</label>
+            <AppSelect
+              :model-value="String(unloadAfterMinutes)"
+              :options="unloadTimeoutOptions"
+              :disabled="!canUnloadAfter"
+              @update:model-value="handleUnloadAfterMinutesChange"
+            />
+          </div>
+
+          <!-- Ollama Keep Alive (always visible, disabled when not using Ollama) -->
+          <div class="field-row">
+            <label :class="{ disabled: !isOllamaPostProcessor }">Ollama Memory</label>
+            <AppSelect
+              :model-value="ollamaKeepAlive"
+              :options="ollamaKeepAliveOptions"
+              :disabled="!isOllamaPostProcessor"
+              @update:model-value="handleOllamaKeepAliveChange"
+            />
+          </div>
+
           <!-- Language -->
           <div class="field-row">
             <label>Language</label>
@@ -413,23 +484,24 @@ function handleBubblePositionChange(value: string | null) {
             />
           </div>
 
-          <!-- Model Path (only when local mode) -->
-          <div v-if="transcriptionMode === 'local'" class="field-row">
-            <label>Model Path</label>
-            <div class="locked-input" :class="{ locked: !modelPathUnlocked }">
+          <!-- Model Path (always visible, disabled when not local mode) -->
+          <div class="field-row">
+            <label :class="{ disabled: !isLocalMode }">Model Path</label>
+            <div class="locked-input" :class="{ locked: !modelPathUnlocked, disabled: !isLocalMode }">
               <input
                 type="text"
                 class="text-input"
                 :value="currentModelPath"
                 :placeholder="modelPathPlaceholder"
-                :disabled="!modelPathUnlocked"
+                :disabled="!isLocalMode || !modelPathUnlocked"
                 spellcheck="false"
                 @input="handleModelPathChange"
               >
               <button
                 class="lock-btn"
                 :title="modelPathUnlocked ? 'Lock' : 'Unlock to edit'"
-                @click="modelPathUnlocked = !modelPathUnlocked"
+                :disabled="!isLocalMode"
+                @click="isLocalMode && (modelPathUnlocked = !modelPathUnlocked)"
               >
                 {{ modelPathUnlocked ? '[-]' : '[=]' }}
               </button>
@@ -523,6 +595,21 @@ function handleBubblePositionChange(value: string | null) {
           <div class="help-section">
             <h3>bubble</h3>
             <p>Shows a floating indicator during recording. Choose position (top/center/bottom) or disable completely.</p>
+          </div>
+
+          <div class="help-section">
+            <h3>keep model loaded</h3>
+            <p>When enabled, local transcription models stay in memory between recordings for faster response (~2GB RAM). Disable to free memory after each recording (slower startup for next recording).</p>
+          </div>
+
+          <div class="help-section">
+            <h3>unload after</h3>
+            <p>Auto-unload the model after this many minutes of inactivity to free memory. "Never" keeps the model loaded until the app closes. Default: 10 minutes.</p>
+          </div>
+
+          <div class="help-section">
+            <h3>ollama memory</h3>
+            <p>How long Ollama keeps its model in GPU memory after post-processing. "Immediate" unloads right away. "Forever" keeps it loaded until Ollama restarts. Default: 5 minutes.</p>
           </div>
 
           <div class="help-section">
@@ -713,7 +800,17 @@ function handleBubblePositionChange(value: string | null) {
   transition: color 0.15s;
 }
 
-.lock-btn:hover {
+.lock-btn:hover:not(:disabled) {
   color: var(--accent);
+}
+
+.lock-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.locked-input.disabled .text-input {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

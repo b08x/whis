@@ -8,11 +8,14 @@
 //! 5. Emit completion event
 
 use crate::state::{AppState, RecordingState};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use whis_core::{
-    DEFAULT_POST_PROCESSING_PROMPT, PostProcessor, copy_to_clipboard, ollama, post_process,
-    preload_ollama, warn,
+    DEFAULT_POST_PROCESSING_PROMPT, PostProcessConfig, PostProcessor, TranscriptionProvider,
+    copy_to_clipboard, ollama, post_process, warn,
 };
+#[cfg(feature = "local-transcription")]
+use whis_core::{unload_parakeet, whisper_unload_model};
 
 /// Stop recording and run the full transcription pipeline (progressive mode)
 /// Guarantees state cleanup on both success and failure
@@ -67,19 +70,20 @@ async fn do_progressive_transcription(app: &AppHandle, state: &AppState) -> Resu
         let post_process_config = if settings.post_processing.enabled
             && settings.post_processing.processor != PostProcessor::None
         {
-            let post_processor = settings.post_processing.processor.clone();
+            let processor = settings.post_processing.processor.clone();
             let prompt = settings
                 .post_processing
                 .prompt
                 .clone()
                 .unwrap_or_else(|| DEFAULT_POST_PROCESSING_PROMPT.to_string());
             let ollama_model = settings.services.ollama.model.clone();
+            let ollama_keep_alive = settings.services.ollama.keep_alive();
 
-            let api_key_or_url = if post_processor.requires_api_key() {
+            let api_key_or_url = if processor.requires_api_key() {
                 settings
                     .post_processing
                     .api_key_from_settings(&settings.transcription.api_keys)
-            } else if post_processor == PostProcessor::Ollama {
+            } else if processor == PostProcessor::Ollama {
                 let ollama_url = settings
                     .services
                     .ollama
@@ -90,7 +94,13 @@ async fn do_progressive_transcription(app: &AppHandle, state: &AppState) -> Resu
                 None
             };
 
-            api_key_or_url.map(|key_or_url| (post_processor, prompt, ollama_model, key_or_url))
+            api_key_or_url.map(|key_or_url| PostProcessConfig {
+                processor,
+                prompt,
+                api_key_or_url: key_or_url,
+                ollama_model,
+                ollama_keep_alive,
+            })
         } else {
             None
         };
@@ -98,11 +108,9 @@ async fn do_progressive_transcription(app: &AppHandle, state: &AppState) -> Resu
     };
 
     // Apply post-processing if configured
-    let final_text = if let Some((post_processor, prompt, ollama_model, key_or_url)) =
-        post_process_config
-    {
-        if post_processor == PostProcessor::Ollama {
-            let url_for_check = key_or_url.clone();
+    let final_text = if let Some(config) = post_process_config {
+        if config.processor == PostProcessor::Ollama {
+            let url_for_check = config.api_key_or_url.clone();
             let ollama_result = tauri::async_runtime::spawn_blocking(move || {
                 ollama::ensure_ollama_running(&url_for_check)
             })
@@ -121,27 +129,36 @@ async fn do_progressive_transcription(app: &AppHandle, state: &AppState) -> Resu
                 let _ = app.emit("transcription-complete", &transcription);
                 return Ok(());
             }
-        }
 
-        // Re-warm Ollama model (in case it unloaded during long recording > 5 min)
-        if post_processor == PostProcessor::Ollama
-            && let Some(model_name) = ollama_model.as_deref()
-        {
-            preload_ollama(&key_or_url, model_name);
-            // Brief pause to allow warmup to complete (runs in background thread)
-            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+            // Re-warm Ollama model (in case it unloaded during long recording > keep_alive timeout)
+            if config.ollama_model.is_some() {
+                {
+                    let settings = state.settings.lock().unwrap();
+                    settings.services.ollama.preload();
+                }
+                // Brief pause to allow warmup to complete (runs in background thread)
+                tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+            }
         }
 
         println!("Post-processing...");
         let _ = app.emit("post-process-started", ());
 
-        let model = if post_processor == PostProcessor::Ollama {
-            ollama_model.as_deref()
+        let model = if config.processor == PostProcessor::Ollama {
+            config.ollama_model.as_deref()
         } else {
             None
         };
 
-        match post_process(&transcription, &post_processor, &key_or_url, &prompt, model).await {
+        match post_process(
+            &transcription,
+            &config.processor,
+            &config.api_key_or_url,
+            &config.prompt,
+            model,
+        )
+        .await
+        {
             Ok(processed) => processed,
             Err(e) => {
                 let warning = e.to_string();
@@ -162,5 +179,85 @@ async fn do_progressive_transcription(app: &AppHandle, state: &AppState) -> Resu
     // Emit event to frontend
     let _ = app.emit("transcription-complete", &final_text);
 
+    // Schedule idle model unload (if configured)
+    schedule_idle_model_unload(app, state);
+
     Ok(())
+}
+
+/// Schedule automatic model unload after idle timeout
+///
+/// If keep_model_loaded is true and unload_after_minutes > 0, spawns a background
+/// task that will unload the model after the configured idle period.
+/// The task can be cancelled if a new recording starts.
+fn schedule_idle_model_unload(app: &AppHandle, state: &AppState) {
+    // Read settings to determine if we should schedule an unload
+    let (keep_loaded, unload_minutes, provider) = {
+        let settings = state.settings.lock().unwrap();
+        let config = state.transcription_config.lock().unwrap();
+        let provider = config.as_ref().map(|c| c.provider.clone());
+        (
+            settings.ui.model_memory.keep_model_loaded,
+            settings.ui.model_memory.unload_after_minutes,
+            provider,
+        )
+    };
+
+    // Only schedule if:
+    // 1. keep_model_loaded is true (otherwise model is already unloaded)
+    // 2. unload_minutes > 0 (0 means "never auto-unload")
+    // 3. We have a local provider
+    #[cfg(feature = "local-transcription")]
+    if keep_loaded
+        && unload_minutes > 0
+        && let Some(provider) = provider
+        && matches!(
+            provider,
+            TranscriptionProvider::LocalWhisper | TranscriptionProvider::LocalParakeet
+        )
+    {
+        let duration = Duration::from_secs(u64::from(unload_minutes) * 60);
+        let app_handle = app.clone();
+
+        // Spawn the delayed unload task
+        let task = tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(duration).await;
+
+            // After sleep, unload the model
+            let state = app_handle.state::<AppState>();
+
+            // Re-check settings in case user changed them while we were waiting
+            let should_unload = {
+                let settings = state.settings.lock().unwrap();
+                settings.ui.model_memory.keep_model_loaded
+                    && settings.ui.model_memory.unload_after_minutes > 0
+            };
+
+            if should_unload {
+                println!(
+                    "Auto-unloading model after {} minutes of inactivity",
+                    unload_minutes
+                );
+                match provider {
+                    TranscriptionProvider::LocalWhisper => {
+                        whisper_unload_model();
+                    }
+                    TranscriptionProvider::LocalParakeet => {
+                        unload_parakeet();
+                    }
+                    _ => {}
+                }
+            }
+        });
+
+        // Store the task handle so we can cancel if a new recording starts
+        state.set_idle_unload_handle(task);
+    }
+
+    // Suppress unused variable warnings when local-transcription feature is disabled
+    #[cfg(not(feature = "local-transcription"))]
+    {
+        let _ = (keep_loaded, unload_minutes, provider);
+        let _ = app;
+    }
 }

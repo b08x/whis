@@ -29,10 +29,10 @@ pub fn show_bubble(app: &AppHandle) {
 
 /// Update bubble position without changing visibility
 pub fn reposition_bubble(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("bubble") {
-        if let Ok((x, y)) = super::window::calculate_bubble_position(app) {
-            let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }));
-        }
+    if let Some(window) = app.get_webview_window("bubble")
+        && let Ok((x, y)) = super::window::calculate_bubble_position(app)
+    {
+        let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }));
     }
 }
 
