@@ -55,7 +55,7 @@ where
             );
         }
         // Log periodically to show it's ongoing (every 1000 errors)
-        else if count % 1000 == 0 {
+        else if count.is_multiple_of(1000) {
             crate::verbose!(
                 "Audio stream: {count} non-fatal errors (recording continues normally)"
             );
