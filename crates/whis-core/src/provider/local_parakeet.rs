@@ -31,7 +31,9 @@ impl TranscriptionBackend for LocalParakeetProvider {
         _model_path: &str,
         _request: TranscriptionRequest,
     ) -> Result<TranscriptionResult> {
-        anyhow::bail!("File transcription not supported. Use microphone recording with transcribe_raw().")
+        anyhow::bail!(
+            "File transcription not supported. Use microphone recording with transcribe_raw()."
+        )
     }
 
     async fn transcribe_async(
@@ -40,7 +42,9 @@ impl TranscriptionBackend for LocalParakeetProvider {
         _model_path: &str,
         _request: TranscriptionRequest,
     ) -> Result<TranscriptionResult> {
-        anyhow::bail!("File transcription not supported. Use microphone recording with transcribe_raw().")
+        anyhow::bail!(
+            "File transcription not supported. Use microphone recording with transcribe_raw()."
+        )
     }
 }
 

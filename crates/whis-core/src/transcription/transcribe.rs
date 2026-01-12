@@ -147,8 +147,8 @@ pub async fn progressive_transcribe_cloud(
         let has_leading_overlap = chunk.has_leading_overlap;
 
         // Convert samples to MP3
-        let mp3_data = samples_to_mp3(&chunk.samples)
-            .context("Failed to encode audio chunk to MP3")?;
+        let mp3_data =
+            samples_to_mp3(&chunk.samples).context("Failed to encode audio chunk to MP3")?;
 
         let request = TranscriptionRequest {
             audio_data: mp3_data,
@@ -159,7 +159,7 @@ pub async fn progressive_transcribe_cloud(
         };
 
         let result = provider_impl
-            .transcribe_async(&client, api_key, request)
+            .transcribe_async(client, api_key, request)
             .await
             .with_context(|| format!("Failed to transcribe chunk {chunk_index}"))?;
 

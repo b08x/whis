@@ -50,7 +50,8 @@ pub fn clear_warmup_cache() {
 /// # Arguments
 /// * `server_url` - Ollama server URL (e.g., "http://localhost:11434")
 /// * `model` - Model name (e.g., "qwen2.5:1.5b")
-pub fn preload_ollama(server_url: &str, model: &str) {
+/// * `keep_alive` - How long to keep model loaded (e.g., "5m", "10m", "-1")
+pub fn preload_ollama(server_url: &str, model: &str, keep_alive: &str) {
     // Check if already warmed
     if is_warmed(server_url, model) {
         crate::verbose!("Ollama model already warmed, skipping preload");
@@ -59,6 +60,7 @@ pub fn preload_ollama(server_url: &str, model: &str) {
 
     let server_url = server_url.to_string();
     let model = model.to_string();
+    let keep_alive = keep_alive.to_string();
 
     std::thread::spawn(move || {
         crate::verbose!("Preloading Ollama model '{}' in background...", model);
@@ -88,7 +90,7 @@ pub fn preload_ollama(server_url: &str, model: &str) {
         }
 
         // Step 3: Send minimal chat request to warm up the model
-        if let Err(e) = warm_model(&server_url, &model) {
+        if let Err(e) = warm_model(&server_url, &model, &keep_alive) {
             crate::verbose!("Ollama preload: warmup request failed: {}", e);
             return;
         }
@@ -102,7 +104,7 @@ pub fn preload_ollama(server_url: &str, model: &str) {
 /// Send minimal chat request to warm up the model
 ///
 /// Uses empty messages array with keep_alive set to extend model lifetime.
-fn warm_model(server_url: &str, model: &str) -> Result<(), String> {
+fn warm_model(server_url: &str, model: &str, keep_alive: &str) -> Result<(), String> {
     let url = format!("{}/api/chat", server_url.trim_end_matches('/'));
 
     let client = reqwest::blocking::Client::builder()
@@ -116,7 +118,7 @@ fn warm_model(server_url: &str, model: &str) -> Result<(), String> {
             "model": model,
             "messages": [],
             "stream": false,
-            "keep_alive": "5m"
+            "keep_alive": keep_alive
         }))
         .send()
         .map_err(|e| {
