@@ -26,6 +26,15 @@ fn parse_duration(s: &str) -> Result<Duration, String> {
     }
 }
 
+/// Input options for transcription
+#[derive(Args)]
+pub struct InputOptions {
+    /// Transcribe an audio file instead of recording from microphone
+    /// Supported formats: WAV
+    #[arg(short = 'f', long, value_name = "PATH", value_hint = ValueHint::FilePath)]
+    pub file: Option<std::path::PathBuf>,
+}
+
 /// Processing options for transcription
 #[derive(Args)]
 pub struct ProcessingOptions {
@@ -45,6 +54,34 @@ pub struct ProcessingOptions {
     /// Disable Voice Activity Detection (records all audio including silence)
     #[arg(long)]
     pub no_vad: bool,
+
+    /// Language code for transcription (e.g., "en", "de", "fr", "auto")
+    /// Overrides the configured language for this invocation only
+    #[arg(short = 'l', long)]
+    pub language: Option<String>,
+}
+
+/// Output format for transcription
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
+pub enum OutputFormat {
+    /// Plain text (default)
+    #[default]
+    Txt,
+    /// SubRip subtitle format
+    Srt,
+    /// WebVTT subtitle format
+    Vtt,
+}
+
+impl OutputFormat {
+    /// Detect format from file extension
+    pub fn from_extension(path: &std::path::Path) -> Option<Self> {
+        match path.extension().and_then(|e| e.to_str()) {
+            Some("srt") => Some(Self::Srt),
+            Some("vtt") => Some(Self::Vtt),
+            _ => None,
+        }
+    }
 }
 
 /// Output options for transcription results
@@ -53,6 +90,14 @@ pub struct OutputOptions {
     /// Print output to stdout instead of copying to clipboard
     #[arg(long)]
     pub print: bool,
+
+    /// Save output to file instead of copying to clipboard
+    #[arg(short = 'o', long, value_name = "PATH", value_hint = ValueHint::FilePath)]
+    pub output: Option<std::path::PathBuf>,
+
+    /// Output format (txt, srt, vtt)
+    #[arg(long, value_enum, default_value = "txt")]
+    pub format: OutputFormat,
 }
 
 #[derive(Parser)]
@@ -68,11 +113,15 @@ pub struct Cli {
     #[arg(short, long, global = true)]
     pub verbose: bool,
 
+    // Input options (file)
+    #[command(flatten)]
+    pub input: InputOptions,
+
     // Processing options (post-processing, presets, duration, VAD)
     #[command(flatten)]
     pub processing: ProcessingOptions,
 
-    // Output options (print)
+    // Output options (print, output path, format)
     #[command(flatten)]
     pub output: OutputOptions,
 }

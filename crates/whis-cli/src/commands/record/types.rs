@@ -33,47 +33,71 @@
 //! - `ProcessedResult`: Final processed text after LLM cleanup/preset transform
 
 use anyhow::Result;
+use std::path::PathBuf;
 use std::time::Duration;
 use whis_core::Preset;
+
+use crate::args::{InputOptions, OutputFormat, OutputOptions, ProcessingOptions};
 
 /// Configuration for the record command
 #[derive(Debug, Clone)]
 pub struct RecordConfig {
+    /// Input file path (None = record from microphone)
+    pub input_file: Option<PathBuf>,
     /// Whether to enable post-processing
     pub post_process: bool,
     /// Preset to apply to output
     pub preset: Option<Preset>,
     /// Whether to print to stdout instead of clipboard
     pub print: bool,
+    /// Output file path (None = clipboard)
+    pub output_path: Option<PathBuf>,
+    /// Output format (txt, srt, vtt)
+    pub format: OutputFormat,
     /// Recording duration (None = until silence/manual stop)
     pub duration: Option<Duration>,
     /// Disable Voice Activity Detection
     pub no_vad: bool,
+    /// Language override (None = use configured language)
+    pub language: Option<String>,
 }
 
 impl RecordConfig {
-    /// Create a new record configuration
-    pub fn new(
-        post_process: bool,
-        preset_name: Option<String>,
-        print: bool,
-        duration: Option<Duration>,
-        no_vad: bool,
+    /// Create configuration from CLI options
+    pub fn from_cli(
+        input: &InputOptions,
+        processing: &ProcessingOptions,
+        output: &OutputOptions,
     ) -> Result<Self> {
         // Load preset if provided
-        let preset = if let Some(name) = preset_name {
-            let (p, _source) = Preset::load(&name).map_err(|e| anyhow::anyhow!("{}", e))?;
+        let preset = if let Some(name) = &processing.preset {
+            let (p, _source) = Preset::load(name).map_err(|e| anyhow::anyhow!("{}", e))?;
             Some(p)
         } else {
             None
         };
 
+        // Auto-detect format from file extension if not explicitly set
+        let format = if output.format == OutputFormat::Txt {
+            output
+                .output
+                .as_ref()
+                .and_then(|p| OutputFormat::from_extension(p))
+                .unwrap_or(output.format)
+        } else {
+            output.format
+        };
+
         Ok(Self {
-            post_process,
+            input_file: input.file.clone(),
+            post_process: processing.post_process,
             preset,
-            print,
-            duration,
-            no_vad,
+            print: output.print,
+            output_path: output.output.clone(),
+            format,
+            duration: processing.duration,
+            no_vad: processing.no_vad,
+            language: processing.language.clone(),
         })
     }
 

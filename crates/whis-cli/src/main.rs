@@ -41,13 +41,11 @@ fn run() -> Result<()> {
         Some(args::Commands::Setup) => commands::setup::run(),
         Some(args::Commands::Model { action }) => commands::model::run(action),
         None => {
-            // Microphone recording (default mode)
-            let config = commands::record::RecordConfig::new(
-                cli.processing.post_process,
-                cli.processing.preset,
-                cli.output.print,
-                cli.processing.duration,
-                cli.processing.no_vad,
+            // Microphone recording or file transcription
+            let config = commands::record::RecordConfig::from_cli(
+                &cli.input,
+                &cli.processing,
+                &cli.output,
             )?;
             commands::record::run(config)
         }

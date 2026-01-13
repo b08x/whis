@@ -63,21 +63,28 @@ pub fn run(config: RecordConfig) -> Result<()> {
     // Create Tokio runtime for async operations
     let runtime = tokio::runtime::Runtime::new()?;
 
-    // Load transcription configuration
-    let transcription_config = app::load_transcription_config()?;
+    // Load transcription configuration (with optional language override)
+    let transcription_config =
+        app::load_transcription_config_with_language(config.language.clone())?;
 
-    // Microphone: Record and transcribe concurrently (streaming)
-    let mic_config = modes::MicrophoneConfig {
-        duration: config.duration,
-        no_vad: config.no_vad,
-        provider: transcription_config.provider.clone(),
-        will_post_process: config.post_process || config.preset.is_some(),
+    // Branch: file transcription vs microphone recording
+    let transcription_result = if let Some(ref input_file) = config.input_file {
+        // File transcription mode
+        runtime.block_on(transcribe_file(input_file, &transcription_config, quiet))?
+    } else {
+        // Microphone: Record and transcribe concurrently (streaming)
+        let mic_config = modes::MicrophoneConfig {
+            duration: config.duration,
+            no_vad: config.no_vad,
+            provider: transcription_config.provider.clone(),
+            will_post_process: config.post_process || config.preset.is_some(),
+        };
+        runtime.block_on(progressive_record_and_transcribe(
+            mic_config,
+            &transcription_config,
+            quiet,
+        ))?
     };
-    let transcription_result = runtime.block_on(progressive_record_and_transcribe(
-        mic_config,
-        &transcription_config,
-        quiet,
-    ))?;
 
     // Phase 3: Post-process and apply presets
     let processing_cfg = pipeline::ProcessingConfig {
@@ -90,13 +97,15 @@ pub fn run(config: RecordConfig) -> Result<()> {
         quiet,
     ))?;
 
-    // Phase 4: Output (print or clipboard)
+    // Phase 4: Output (print, file, or clipboard)
     let output_mode = if config.print {
         pipeline::OutputMode::Print
+    } else if let Some(path) = config.output_path {
+        pipeline::OutputMode::File(path)
     } else {
         pipeline::OutputMode::Clipboard
     };
-    pipeline::output(processed_result, output_mode, quiet)?;
+    pipeline::output(processed_result, output_mode, config.format, quiet)?;
 
     Ok(())
 }
@@ -355,4 +364,82 @@ fn preload_models(config: &modes::MicrophoneConfig) {
             settings.services.ollama.preload();
         }
     }
+}
+
+/// Transcribe an audio file
+async fn transcribe_file(
+    input_file: &std::path::Path,
+    transcription_config: &app::TranscriptionConfig,
+    quiet: bool,
+) -> Result<types::TranscriptionResult> {
+    use whis_core::{TranscriptionProvider, http::get_http_client, provider::TranscriptionRequest};
+
+    if !quiet {
+        eprintln!(
+            "Transcribing {}...",
+            input_file.file_name().unwrap_or_default().to_string_lossy()
+        );
+    }
+
+    // Read audio file and convert to 16kHz mono samples
+    let samples = modes::file::read_audio_file(input_file)?;
+
+    // Handle local vs cloud providers differently
+    let text = match &transcription_config.provider {
+        #[cfg(feature = "local-transcription")]
+        TranscriptionProvider::LocalParakeet => {
+            let model_path = whis_core::Settings::load()
+                .transcription
+                .parakeet_model_path()
+                .ok_or_else(|| anyhow::anyhow!("Parakeet model path not configured"))?;
+
+            tokio::task::spawn_blocking(move || {
+                whis_core::provider::transcribe_raw_parakeet(&model_path, samples)
+            })
+            .await??
+            .text
+        }
+
+        #[cfg(feature = "local-transcription")]
+        TranscriptionProvider::LocalWhisper => {
+            let model_path = transcription_config.api_key.clone();
+            let language = transcription_config.language.clone();
+            tokio::task::spawn_blocking(move || {
+                whis_core::provider::transcribe_raw(&model_path, &samples, language.as_deref())
+            })
+            .await??
+            .text
+        }
+
+        _ => {
+            // Cloud providers: encode to MP3 and send
+            let encoder = whis_core::audio::create_encoder();
+            let mp3_data = encoder.encode_samples(&samples, whis_core::resample::WHISPER_SAMPLE_RATE)?;
+
+            let client = get_http_client()?;
+            let provider = whis_core::provider::registry().get_by_kind(&transcription_config.provider)?;
+
+            let request = TranscriptionRequest {
+                audio_data: mp3_data,
+                language: transcription_config.language.clone(),
+                filename: format!(
+                    "{}.mp3",
+                    input_file.file_stem().unwrap_or_default().to_string_lossy()
+                ),
+                mime_type: "audio/mpeg".to_string(),
+                progress: None,
+            };
+
+            provider
+                .transcribe_async(client, &transcription_config.api_key, request)
+                .await?
+                .text
+        }
+    };
+
+    if !quiet {
+        eprintln!("Done.");
+    }
+
+    Ok(types::TranscriptionResult { text })
 }

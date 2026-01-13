@@ -33,14 +33,19 @@ pub fn ensure_ffmpeg_installed() -> Result<()> {
     Ok(())
 }
 
-pub fn load_transcription_config() -> Result<TranscriptionConfig> {
+/// Load transcription config with optional language override
+pub fn load_transcription_config_with_language(
+    language_override: Option<String>,
+) -> Result<TranscriptionConfig> {
     // Check if settings file exists (fresh install detection)
     let settings_path = Settings::path();
     let is_fresh_install = !settings_path.exists();
 
     let settings = Settings::load();
     let provider = settings.transcription.provider.clone();
-    let language = settings.transcription.language.clone();
+
+    // Use override if provided, otherwise use configured language
+    let language = language_override.or_else(|| settings.transcription.language.clone());
 
     // Handle different provider types:
     // - Cloud providers: require API key
@@ -114,6 +119,11 @@ pub fn load_transcription_config() -> Result<TranscriptionConfig> {
         api_key, // For local-whisper this is model path
         language,
     })
+}
+
+/// Load transcription config using configured language
+pub fn load_transcription_config() -> Result<TranscriptionConfig> {
+    load_transcription_config_with_language(None)
 }
 
 /// Wait for user to stop recording via Enter key.
