@@ -126,12 +126,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  if (unlistenBubbleClick) {
-    unlistenBubbleClick()
-  }
-  if (unlistenBubbleClose) {
-    unlistenBubbleClose()
-  }
+  unlistenBubbleClick?.()
+  unlistenBubbleClose?.()
   recordingStore.cleanup()
 })
 </script>
@@ -365,11 +361,8 @@ onUnmounted(() => {
 
 /* Content */
 .content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
+  height: calc(100vh - 48px - env(safe-area-inset-top, 0px));
   margin-top: calc(48px + env(safe-area-inset-top, 0px));
-  min-height: calc(100vh - 48px - env(safe-area-inset-top, 0px));
   overflow-y: auto;
 }
 </style>

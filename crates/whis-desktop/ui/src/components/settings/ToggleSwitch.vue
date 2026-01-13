@@ -69,13 +69,14 @@ function handleClick() {
   height: 14px;
   background: var(--text-strong);
   border-radius: 2px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-  transition: transform 150ms;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  transition: transform 150ms, box-shadow 150ms;
 }
 
 .toggle-switch.active .toggle-knob {
   transform: translateX(12px);
   background: var(--bg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 0, 0, 0.1);
 }
 
 .toggle-switch.disabled {

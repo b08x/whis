@@ -49,7 +49,7 @@ function handleClick() {
 <template>
   <div
     class="bubble"
-    :class="{ visible: isVisible }"
+    :class="{ visible: isVisible, recording: state === 'recording', transcribing: state === 'transcribing' }"
     @click="handleClick"
   >
     <img :src="iconSrc" alt="Whis" class="icon">
@@ -67,12 +67,22 @@ function handleClick() {
   justify-content: center;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 200ms ease, transform 100ms ease;
+  transition: opacity 200ms ease, transform 100ms ease, box-shadow 200ms ease;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
 .bubble.visible {
   opacity: 1;
+}
+
+/* Recording state - subtle red glow */
+.bubble.recording {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), 0 0 12px rgba(255, 68, 68, 0.5), 0 0 24px rgba(255, 68, 68, 0.25);
+}
+
+/* Transcribing state - subtle gold glow */
+.bubble.transcribing {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), 0 0 8px rgba(255, 213, 79, 0.3);
 }
 
 .bubble:hover {
