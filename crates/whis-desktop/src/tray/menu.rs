@@ -6,6 +6,7 @@
 use super::TRAY_ID;
 use super::icons::{ICON_IDLE, ICON_RECORDING, ICON_TRANSCRIBING, set_tray_icon};
 use crate::state::{AppState, RecordingState};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::{AppHandle, Manager};
 
 /// Update tray menu and icon for new recording state

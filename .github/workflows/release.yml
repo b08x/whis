@@ -104,6 +104,11 @@ jobs:
           vulkan_version: latest
           cache: true
 
+      - name: Install onnxruntime
+        run: |
+          mkdir -p /opt/onnxruntime
+          curl -L https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-aarch64-1.22.0.tgz | tar xz -C /opt/onnxruntime --strip-components=1
+
       - name: Build CLI
         run: just build-release-cli
         env:
