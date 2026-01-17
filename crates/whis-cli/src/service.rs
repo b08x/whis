@@ -41,8 +41,8 @@ use crate::hotkey::HotkeyEvent;
 use crate::ipc::{IpcMessage, IpcResponse, IpcServer};
 use std::time::Duration;
 use whis_core::{
-    AudioRecorder, DEFAULT_POST_PROCESSING_PROMPT, Settings, TranscriptionProvider,
-    copy_to_clipboard, post_process,
+    AudioRecorder, DEFAULT_POST_PROCESSING_PROMPT, OutputMethod, Settings, TranscriptionProvider,
+    copy_to_clipboard, post_process, type_text,
 };
 
 // Type aliases to reduce complexity warnings
@@ -451,11 +451,29 @@ impl Service {
             transcription
         };
 
-        // Copy to clipboard (blocking operation)
+        // Output based on configured method (blocking operation)
         let clipboard_method = settings.ui.clipboard_backend.clone();
-        tokio::task::spawn_blocking(move || copy_to_clipboard(&final_text, clipboard_method))
-            .await
-            .context("Failed to join task")??;
+        let output_method = settings.ui.output_method.clone();
+        let typing_backend = settings.ui.typing_backend.clone();
+        let typing_delay_ms = settings.ui.typing_delay_ms;
+
+        tokio::task::spawn_blocking(move || {
+            match output_method {
+                OutputMethod::Clipboard => {
+                    copy_to_clipboard(&final_text, clipboard_method)?;
+                }
+                OutputMethod::TypeToWindow => {
+                    type_text(&final_text, typing_backend, typing_delay_ms)?;
+                }
+                OutputMethod::Both => {
+                    copy_to_clipboard(&final_text, clipboard_method)?;
+                    type_text(&final_text, typing_backend, typing_delay_ms)?;
+                }
+            }
+            Ok::<(), anyhow::Error>(())
+        })
+        .await
+        .context("Failed to join task")??;
 
         Ok(())
     }

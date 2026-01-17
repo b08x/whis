@@ -4,7 +4,7 @@ use anyhow::Result;
 use std::fs;
 use std::io::{self, IsTerminal};
 use std::path::PathBuf;
-use whis_core::{Settings, copy_to_clipboard};
+use whis_core::{OutputMethod, Settings, copy_to_clipboard, type_text};
 
 use crate::args::OutputFormat;
 
@@ -14,8 +14,10 @@ use super::super::types::ProcessedResult;
 pub enum OutputMode {
     /// Print to stdout
     Print,
-    /// Copy to clipboard
+    /// Copy to clipboard (or type to window, based on settings)
     Clipboard,
+    /// Type directly to active window (overrides settings)
+    TypeToWindow,
     /// Write to file
     File(PathBuf),
 }
@@ -146,9 +148,48 @@ pub fn output(
         }
         OutputMode::Clipboard => {
             let settings = Settings::load();
-            copy_to_clipboard(&formatted, settings.ui.clipboard_backend)?;
+
+            // Handle output based on configured method
+            match settings.ui.output_method {
+                OutputMethod::Clipboard => {
+                    copy_to_clipboard(&formatted, settings.ui.clipboard_backend)?;
+                }
+                OutputMethod::TypeToWindow => {
+                    type_text(
+                        &formatted,
+                        settings.ui.typing_backend,
+                        settings.ui.typing_delay_ms,
+                    )?;
+                }
+                OutputMethod::Both => {
+                    copy_to_clipboard(&formatted, settings.ui.clipboard_backend)?;
+                    type_text(
+                        &formatted,
+                        settings.ui.typing_backend,
+                        settings.ui.typing_delay_ms,
+                    )?;
+                }
+            }
+
             if !quiet && io::stdout().is_terminal() {
-                println!("Copied to clipboard!");
+                match settings.ui.output_method {
+                    OutputMethod::Clipboard => println!("Copied to clipboard!"),
+                    OutputMethod::TypeToWindow => println!("Typed to active window!"),
+                    OutputMethod::Both => {
+                        println!("Copied to clipboard and typed to active window!")
+                    }
+                }
+            }
+        }
+        OutputMode::TypeToWindow => {
+            let settings = Settings::load();
+            type_text(
+                &formatted,
+                settings.ui.typing_backend,
+                settings.ui.typing_delay_ms,
+            )?;
+            if !quiet && io::stdout().is_terminal() {
+                println!("Typed to active window!");
             }
         }
     }

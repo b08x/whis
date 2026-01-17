@@ -27,17 +27,18 @@ pub fn run() -> Result<()> {
             // Try to set up hotkey via evdev/rdev
             let shortcut = &settings.shortcuts.cli_key;
             let push_to_talk = settings.shortcuts.cli_push_to_talk;
+            let output_method = &settings.ui.output_method;
             match hotkey::setup(shortcut) {
                 Ok((hotkey_rx, _guard)) => {
                     if push_to_talk {
                         println!(
-                            "Listening. Hold {} to record (push-to-talk). Ctrl+C to stop.",
-                            shortcut
+                            "Listening. Hold {} to record (push-to-talk). Output: {}. Ctrl+C to stop.",
+                            shortcut, output_method
                         );
                     } else {
                         println!(
-                            "Listening. Press {} to toggle recording. Ctrl+C to stop.",
-                            shortcut
+                            "Listening. Press {} to toggle recording. Output: {}. Ctrl+C to stop.",
+                            shortcut, output_method
                         );
                     }
 
@@ -67,7 +68,11 @@ pub fn run() -> Result<()> {
         }
         _ => {
             // "system" mode (or any other value) - IPC only
-            println!("Listening. Press your configured shortcut to record. Ctrl+C to stop.");
+            let output_method = &settings.ui.output_method;
+            println!(
+                "Listening. Press your configured shortcut to record. Output: {}. Ctrl+C to stop.",
+                output_method
+            );
 
             runtime.block_on(async {
                 let service = service::Service::new(config)?;

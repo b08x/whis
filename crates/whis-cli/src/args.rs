@@ -91,6 +91,11 @@ pub struct OutputOptions {
     #[arg(long)]
     pub print: bool,
 
+    /// Type output into active window instead of copying to clipboard
+    /// Uses wrtype on Wayland, enigo on X11/macOS/Windows
+    #[arg(long = "type")]
+    pub type_to_window: bool,
+
     /// Save output to file instead of copying to clipboard
     #[arg(short = 'o', long, value_name = "PATH", value_hint = ValueHint::FilePath)]
     pub output: Option<std::path::PathBuf>,

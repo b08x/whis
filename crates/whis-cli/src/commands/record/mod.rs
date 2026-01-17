@@ -97,11 +97,13 @@ pub fn run(config: RecordConfig) -> Result<()> {
         quiet,
     ))?;
 
-    // Phase 4: Output (print, file, or clipboard)
+    // Phase 4: Output (print, file, type to window, or clipboard)
     let output_mode = if config.print {
         pipeline::OutputMode::Print
     } else if let Some(path) = config.output_path {
         pipeline::OutputMode::File(path)
+    } else if config.type_to_window {
+        pipeline::OutputMode::TypeToWindow
     } else {
         pipeline::OutputMode::Clipboard
     };

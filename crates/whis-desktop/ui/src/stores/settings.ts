@@ -1,4 +1,4 @@
-import type { BackendInfo, CliShortcutMode, PostProcessor, Provider, Settings, ShortcutPathMismatch } from '../types'
+import type { BackendInfo, CliShortcutMode, OutputMethod, PostProcessor, Provider, Settings, ShortcutPathMismatch, TypingBackend } from '../types'
 import { invoke } from '@tauri-apps/api/core'
 import { nextTick, reactive, readonly, watch } from 'vue'
 
@@ -82,6 +82,9 @@ function getDefaultSettings(): Settings {
       clipboard_backend: 'auto',
       microphone_device: null,
       chunk_duration_secs: 90,
+      output_method: 'clipboard' as OutputMethod,
+      typing_backend: 'auto' as TypingBackend,
+      typing_delay_ms: null,
       vad: {
         enabled: defaults.vad_enabled,
         threshold: defaults.vad_threshold,
@@ -211,6 +214,9 @@ async function load() {
       clipboard_backend: settings.ui.clipboard_backend,
       microphone_device: settings.ui.microphone_device,
       chunk_duration_secs: Math.max(10, Math.min(300, settings.ui.chunk_duration_secs ?? 90)),
+      output_method: settings.ui.output_method ?? 'clipboard',
+      typing_backend: settings.ui.typing_backend ?? 'auto',
+      typing_delay_ms: settings.ui.typing_delay_ms ?? null,
       vad: {
         enabled: settings.ui.vad.enabled ?? defaults.vad_enabled,
         threshold: settings.ui.vad.threshold ?? defaults.vad_threshold,

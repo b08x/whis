@@ -59,6 +59,9 @@ export interface Settings {
     clipboard_backend: string
     microphone_device: string | null
     chunk_duration_secs: number
+    output_method: OutputMethod
+    typing_backend: TypingBackend
+    typing_delay_ms: number | null
     vad: {
       enabled: boolean
       threshold: number
@@ -73,6 +76,12 @@ export interface Settings {
     }
   }
 }
+
+// How transcribed text should be output
+export type OutputMethod = 'clipboard' | 'type_to_window' | 'both'
+
+// Which backend to use for typing (when OutputMethod includes typing)
+export type TypingBackend = 'auto' | 'wrtype' | 'enigo'
 
 // Shortcut backend information
 export interface BackendInfo {

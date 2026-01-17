@@ -18,6 +18,8 @@ pub mod http;
 pub mod platform;
 pub mod resample;
 pub mod state;
+#[cfg(feature = "typing")]
+pub mod typing;
 pub mod verbose;
 
 // Re-export audio types
@@ -73,6 +75,8 @@ pub use error::{AudioError, ProviderError, Result, WhisError};
 pub use http::{get_http_client, is_http_client_ready, warmup_http_client};
 pub use settings::Settings;
 pub use state::RecordingState;
+#[cfg(feature = "typing")]
+pub use typing::{OutputMethod, TypingBackend, type_text};
 pub use verbose::set_verbose;
 
 #[cfg(feature = "hotkey")]

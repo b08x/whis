@@ -11,11 +11,35 @@ use crate::state::{AppState, RecordingState};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use whis_core::{
-    DEFAULT_POST_PROCESSING_PROMPT, PostProcessConfig, PostProcessor, TranscriptionProvider,
-    copy_to_clipboard, ollama, post_process, warn,
+    ClipboardMethod, DEFAULT_POST_PROCESSING_PROMPT, OutputMethod, PostProcessConfig,
+    PostProcessor, TranscriptionProvider, TypingBackend, copy_to_clipboard, ollama, post_process,
+    type_text, warn,
 };
 #[cfg(feature = "local-transcription")]
 use whis_core::{unload_parakeet, whisper_unload_model};
+
+/// Output text based on configured output method
+fn output_text(
+    text: &str,
+    output_method: &OutputMethod,
+    clipboard_method: &ClipboardMethod,
+    typing_backend: &TypingBackend,
+    typing_delay_ms: Option<u32>,
+) -> Result<(), String> {
+    match output_method {
+        OutputMethod::Clipboard => {
+            copy_to_clipboard(text, clipboard_method.clone()).map_err(|e| e.to_string())?;
+        }
+        OutputMethod::TypeToWindow => {
+            type_text(text, typing_backend.clone(), typing_delay_ms).map_err(|e| e.to_string())?;
+        }
+        OutputMethod::Both => {
+            copy_to_clipboard(text, clipboard_method.clone()).map_err(|e| e.to_string())?;
+            type_text(text, typing_backend.clone(), typing_delay_ms).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
 
 /// Stop recording and run the full transcription pipeline (progressive mode)
 /// Guarantees state cleanup on both success and failure
@@ -63,10 +87,13 @@ async fn do_progressive_transcription(app: &AppHandle, state: &AppState) -> Resu
         .map_err(|_| "Transcription task dropped unexpectedly".to_string())?
         .map_err(|e| format!("Transcription failed: {e}"))?;
 
-    // Extract post-processing config and clipboard method from settings
-    let (post_process_config, clipboard_method) = {
+    // Extract post-processing config and output settings from settings
+    let (post_process_config, clipboard_method, output_method, typing_backend, typing_delay_ms) = {
         let settings = state.settings.lock().unwrap();
         let clipboard_method = settings.ui.clipboard_backend.clone();
+        let output_method = settings.ui.output_method.clone();
+        let typing_backend = settings.ui.typing_backend.clone();
+        let typing_delay_ms = settings.ui.typing_delay_ms;
         let post_process_config = if settings.post_processing.enabled
             && settings.post_processing.processor != PostProcessor::None
         {
@@ -104,7 +131,13 @@ async fn do_progressive_transcription(app: &AppHandle, state: &AppState) -> Resu
         } else {
             None
         };
-        (post_process_config, clipboard_method)
+        (
+            post_process_config,
+            clipboard_method,
+            output_method,
+            typing_backend,
+            typing_delay_ms,
+        )
     };
 
     // Apply post-processing if configured
@@ -121,7 +154,16 @@ async fn do_progressive_transcription(app: &AppHandle, state: &AppState) -> Resu
                 let warning = format!("Ollama: {e}");
                 warn!("Post-processing: {warning}");
                 let _ = app.emit("post-process-warning", &warning);
-                copy_to_clipboard(&transcription, clipboard_method).map_err(|e| e.to_string())?;
+
+                // Output based on configured method
+                output_text(
+                    &transcription,
+                    &output_method,
+                    &clipboard_method,
+                    &typing_backend,
+                    typing_delay_ms,
+                )?;
+
                 println!(
                     "Done (unprocessed): {}",
                     &transcription[..transcription.len().min(50)]
@@ -171,8 +213,14 @@ async fn do_progressive_transcription(app: &AppHandle, state: &AppState) -> Resu
         transcription
     };
 
-    // Copy to clipboard
-    copy_to_clipboard(&final_text, clipboard_method).map_err(|e| e.to_string())?;
+    // Output based on configured method
+    output_text(
+        &final_text,
+        &output_method,
+        &clipboard_method,
+        &typing_backend,
+        typing_delay_ms,
+    )?;
 
     println!("Done: {}", &final_text[..final_text.len().min(50)]);
 

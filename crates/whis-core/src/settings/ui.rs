@@ -12,6 +12,9 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "clipboard")]
 use crate::clipboard::ClipboardMethod;
 
+#[cfg(feature = "typing")]
+use crate::typing::{OutputMethod, TypingBackend};
+
 /// Settings for UI behavior and device configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UiSettings {
@@ -82,6 +85,43 @@ pub struct UiSettings {
     /// Helps balance transcription speed vs memory usage.
     #[serde(default)]
     pub model_memory: ModelMemorySettings,
+
+    /// Output method for transcribed text.
+    ///
+    /// - `clipboard`: Copy to clipboard only (default, current behavior)
+    /// - `type_to_window`: Type directly into active window
+    /// - `both`: Both copy to clipboard and type to window
+    ///
+    /// Type-to-window simulates keyboard input to paste text directly.
+    /// Useful when clipboard pasting doesn't work (e.g., some terminals).
+    #[cfg(feature = "typing")]
+    #[serde(default)]
+    pub output_method: OutputMethod,
+
+    /// Backend for typing text into the active window.
+    ///
+    /// - `auto`: Auto-detect based on platform (recommended)
+    ///   - Wayland: uses wrtype (virtual keyboard protocol)
+    ///   - X11/macOS/Windows: uses enigo (pure Rust)
+    /// - `wrtype`: Force Wayland virtual keyboard
+    /// - `enigo`: Force cross-platform input simulation
+    ///
+    /// Only used when `output_method` is `type_to_window` or `both`.
+    #[cfg(feature = "typing")]
+    #[serde(default)]
+    pub typing_backend: TypingBackend,
+
+    /// Delay between keystrokes when typing to window (milliseconds).
+    ///
+    /// Some applications drop input if keys are sent too fast.
+    /// Set this to add a delay between each character.
+    ///
+    /// - `null`: No delay (fastest, works for most apps)
+    /// - `10-50`: Slight delay for slower apps
+    /// - `100+`: For very slow input handlers
+    #[cfg(feature = "typing")]
+    #[serde(default)]
+    pub typing_delay_ms: Option<u32>,
 }
 
 fn default_chunk_duration() -> u64 {
@@ -196,6 +236,12 @@ impl Default for UiSettings {
             chunk_duration_secs: crate::configuration::DEFAULT_CHUNK_DURATION_SECS,
             bubble: BubbleSettings::default(),
             model_memory: ModelMemorySettings::default(),
+            #[cfg(feature = "typing")]
+            output_method: OutputMethod::default(),
+            #[cfg(feature = "typing")]
+            typing_backend: TypingBackend::default(),
+            #[cfg(feature = "typing")]
+            typing_delay_ms: None,
         }
     }
 }
