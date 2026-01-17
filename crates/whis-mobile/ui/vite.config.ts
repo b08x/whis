@@ -1,3 +1,8 @@
+// NOTE: Build shows "[lightningcss minify] 'deep' is not recognized" warning.
+// This is a false positive - :deep() is valid Vue 3 scoped CSS syntax.
+// The fix exists in vite-plugin-vue (PR #521) but doesn't work with rolldown-vite.
+// Tracking: https://github.com/vitejs/rolldown-vite/issues/573
+
 import process from 'node:process'
 import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vite'

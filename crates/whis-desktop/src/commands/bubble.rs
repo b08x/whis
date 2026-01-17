@@ -48,6 +48,8 @@ pub fn bubble_save_position(app: AppHandle, x: f64, y: f64) -> Result<(), String
         s.ui.bubble.custom_position = Some((x, y));
     });
     // Persist to disk
-    state.with_settings(|s| s.save());
+    if let Err(e) = state.with_settings(|s| s.save()) {
+        eprintln!("Failed to save bubble position: {e}");
+    }
     Ok(())
 }

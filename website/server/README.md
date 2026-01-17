@@ -13,3 +13,9 @@ Even though this website is fully static (no runtime server), Nuxt uses [Nitro](
 Check if the warnings are gone by removing this folder and running `npm run build`. If no `[intlify] Detected HTML` warnings appear, delete this folder.
 
 Related: https://github.com/nuxt-modules/i18n/discussions/1968
+
+## vue-i18n Deprecation Warning
+
+The `npm warn deprecated vue-i18n@10.0.8` warning during install comes from a transitive dependency
+of `@nuxtjs/i18n`. This is a known issue - waiting for `@nuxtjs/i18n` to upgrade to vue-i18n v11 internally.
+No action needed on our part.

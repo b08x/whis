@@ -18,7 +18,6 @@ futures-util = "0.3"
 cpal.workspace = true
 hound = { workspace = true, optional = true }
 arboard = { workspace = true, optional = true }
-dotenvy.workspace = true
 dirs.workspace = true
 async-trait = "0.1"
 once_cell = "1.20"
