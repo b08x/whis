@@ -62,6 +62,16 @@ pub use instructions::{get_config_path, get_config_snippet, get_instructions};
 
 use tauri::{AppHandle, Manager};
 
+/// Format platform name for display (e.g., "Wayland", "X11", "macOS")
+fn platform_display_name(platform: &whis_core::platform::Platform) -> &'static str {
+    match platform {
+        whis_core::platform::Platform::MacOS => "macOS",
+        whis_core::platform::Platform::Windows => "Windows",
+        whis_core::platform::Platform::LinuxX11 => "X11",
+        whis_core::platform::Platform::LinuxWayland => "Wayland",
+    }
+}
+
 /// Setup shortcuts based on detected backend
 pub fn setup_shortcuts(app: &tauri::App) {
     let capability = detect_backend();
@@ -71,20 +81,19 @@ pub fn setup_shortcuts(app: &tauri::App) {
     drop(settings);
 
     let compositor_name = capability.platform_info.compositor.display_name();
-    println!(
-        "Detected environment: {} (backend: {:?})",
-        compositor_name, capability.backend
-    );
+    let platform_name = platform_display_name(&capability.platform_info.platform);
+    println!("Detected environment: {} ({})", compositor_name, platform_name);
 
     match capability.backend {
         ShortcutBackend::TauriPlugin => {
             if let Err(e) = setup_tauri_shortcut(app, &shortcut_str) {
-                eprintln!("Failed to setup Tauri shortcut: {e}");
-                eprintln!("Falling back to manual setup mode");
+                eprintln!("Shortcut setup failed: {e}");
                 print_manual_setup_instructions(
                     &capability.platform_info.compositor,
                     &shortcut_str,
                 );
+            } else {
+                println!("Global shortcut registered: {shortcut_str}");
             }
         }
         #[cfg(target_os = "linux")]
@@ -95,13 +104,12 @@ pub fn setup_shortcuts(app: &tauri::App) {
                     state.rdev_guard.lock().unwrap().replace(guard);
                     // Clear any previous error
                     state.rdev_grab_error.lock().unwrap().take();
-                    println!("RdevGrab shortcut registered: {shortcut_str}");
+                    println!("Direct shortcut registered: {shortcut_str}");
                 }
                 Err(e) => {
-                    eprintln!("RdevGrab failed: {e}");
                     // Store the error for UI display
                     state.rdev_grab_error.lock().unwrap().replace(e.to_string());
-                    eprintln!("Falling back to manual setup");
+                    eprintln!("Direct shortcut unavailable (permission denied)");
                     print_manual_setup_instructions(
                         &capability.platform_info.compositor,
                         &shortcut_str,
@@ -132,8 +140,7 @@ pub fn setup_shortcuts(app: &tauri::App) {
                 )
                 .await
                 {
-                    eprintln!("Portal shortcuts failed: {e}");
-                    eprintln!("Falling back to CLI mode");
+                    eprintln!("Portal shortcut setup failed: {e}");
                 }
             });
         }

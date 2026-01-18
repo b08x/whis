@@ -72,15 +72,7 @@ fn start_keyboard_grab(hotkey: Hotkey, app_handle: AppHandle) -> Result<(), Stri
 
     // rdev::grab() blocks the thread
     if let Err(e) = rdev::grab(callback) {
-        return Err(format!(
-            "Failed to grab keyboard: {e:?}\n\n\
-            Linux setup required:\n  \
-            sudo usermod -aG input $USER\n  \
-            echo 'KERNEL==\"uinput\", GROUP=\"input\", MODE=\"0660\"' | \
-            sudo tee /etc/udev/rules.d/99-uinput.rules\n  \
-            sudo udevadm control --reload-rules && sudo udevadm trigger\n\
-            Then logout and login again."
-        ));
+        return Err(format!("Failed to grab keyboard: {e:?}"));
     }
 
     Ok(())
