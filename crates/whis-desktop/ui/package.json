@@ -1,7 +1,7 @@
 {
   "name": "whis-desktop-ui",
   "type": "module",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",

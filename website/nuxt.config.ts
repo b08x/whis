@@ -75,7 +75,7 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
-      appVersion: '0.7.1',
+      appVersion: '0.7.2',
     },
   },
 

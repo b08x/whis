@@ -9,7 +9,7 @@ import { settingsStore } from './stores/settings'
 const route = useRoute()
 
 // App info
-const appVersion = '0.7.0'
+const appVersion = '0.7.2'
 const appRepo = 'https://github.com/frankdierolf/whis'
 const appSite = 'https://whis.ink'
 
