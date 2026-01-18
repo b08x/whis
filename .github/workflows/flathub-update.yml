@@ -1,4 +1,5 @@
-# Automatically create Flathub PR when a release is published
+# DEPRECATED: This workflow is disabled and kept for reference only.
+# To reactivate automatic Flathub updates, add back: release: types: [published]
 #
 # This workflow:
 # 1. Regenerates cargo-sources.json and node-sources.json
@@ -11,10 +12,6 @@
 name: Update Flathub
 
 on:
-  release:
-    types: [published]
-
-  # Allow manual trigger for testing
   workflow_dispatch:
     inputs:
       version:
