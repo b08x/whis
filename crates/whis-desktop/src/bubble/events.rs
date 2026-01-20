@@ -15,25 +15,21 @@ pub fn show_bubble(app: &AppHandle) {
         return;
     }
 
-    if let Some(window) = app.get_webview_window("bubble") {
-        // Update position before showing
-        if let Ok((x, y)) = super::window::calculate_bubble_position(app) {
-            let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }));
-        }
+    let Some(window) = app.get_webview_window("bubble") else {
+        return;
+    };
 
-        let current_state = state.get_state();
-        let _ = window.show();
-        let _ = window.emit("bubble-state", state_to_string(current_state));
-    }
-}
-
-/// Update bubble position without changing visibility
-pub fn reposition_bubble(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("bubble")
+    // Only update position on platforms that support it.
+    // On Wayland, let the compositor place the window naturally.
+    if whis_core::platform::supports_window_positioning()
         && let Ok((x, y)) = super::window::calculate_bubble_position(app)
     {
-        let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }));
+        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
     }
+
+    let current_state = state.get_state();
+    let _ = window.show();
+    let _ = window.emit("bubble-state", state_to_string(current_state));
 }
 
 /// Hide the bubble

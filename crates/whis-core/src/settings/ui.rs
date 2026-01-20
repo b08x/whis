@@ -122,49 +122,19 @@ impl Default for VadSettings {
     }
 }
 
-/// Floating bubble overlay position.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum BubblePosition {
-    /// Disabled (default)
-    #[default]
-    None,
-    /// Top of screen
-    Top,
-    /// Center of screen
-    Center,
-    /// Bottom of screen
-    Bottom,
-}
-
 /// Floating bubble overlay settings (experimental).
 ///
 /// The bubble is a small floating indicator that shows
 /// recording status. Desktop only.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BubbleSettings {
     /// Enable floating bubble overlay.
     #[serde(default)]
     pub enabled: bool,
 
-    /// Bubble position on screen.
-    #[serde(default)]
-    pub position: BubblePosition,
-
     /// Custom bubble position (x, y) set by user dragging.
-    /// When set, overrides the `position` preset.
     #[serde(default)]
     pub custom_position: Option<(f64, f64)>,
-}
-
-impl Default for BubbleSettings {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            position: BubblePosition::None,
-            custom_position: None,
-        }
-    }
 }
 
 /// Model memory management settings.

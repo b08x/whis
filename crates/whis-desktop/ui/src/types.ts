@@ -66,7 +66,6 @@ export interface Settings {
     active_preset: string | null
     bubble: {
       enabled: boolean
-      position: string // Kept for backwards compatibility, no longer used by UI
     }
     model_memory: {
       keep_model_loaded: boolean

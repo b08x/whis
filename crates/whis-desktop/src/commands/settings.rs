@@ -40,7 +40,7 @@ pub async fn save_settings(
     settings: Settings,
 ) -> Result<SaveSettingsResponse, String> {
     // Check what changed
-    let (config_changed, shortcut_changed, bubble_position_changed) = {
+    let (config_changed, shortcut_changed) = {
         let current = state.settings.lock().unwrap();
         (
             current.transcription.provider != settings.transcription.provider
@@ -51,7 +51,6 @@ pub async fn save_settings(
                 || current.transcription.local_models.parakeet_path
                     != settings.transcription.local_models.parakeet_path,
             current.shortcuts.desktop_key != settings.shortcuts.desktop_key,
-            current.ui.bubble.position != settings.ui.bubble.position,
         )
     };
 
@@ -73,11 +72,6 @@ pub async fn save_settings(
     } else {
         false
     };
-
-    // Reposition bubble if its position changed
-    if bubble_position_changed {
-        crate::bubble::events::reposition_bubble(&app);
-    }
 
     Ok(SaveSettingsResponse { needs_restart })
 }

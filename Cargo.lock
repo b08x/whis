@@ -7157,11 +7157,11 @@ dependencies = [
 
 [[package]]
 name = "whis"
-version = "0.7.0"
+version = "0.7.2"
 
 [[package]]
 name = "whis-cli"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -7182,7 +7182,7 @@ dependencies = [
 
 [[package]]
 name = "whis-core"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "arboard",
@@ -7217,7 +7217,7 @@ dependencies = [
 
 [[package]]
 name = "whis-desktop"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "ashpd",
@@ -7240,7 +7240,7 @@ dependencies = [
 
 [[package]]
 name = "whis-mobile"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "jni",

@@ -53,3 +53,10 @@ pub fn bubble_save_position(app: AppHandle, x: f64, y: f64) -> Result<(), String
     }
     Ok(())
 }
+
+/// Check if bubble drag-and-drop is supported on this platform.
+/// Returns false for pure Wayland where compositors ignore set_position().
+#[tauri::command]
+pub fn bubble_supports_drag() -> bool {
+    whis_core::platform::supports_window_positioning()
+}

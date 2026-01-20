@@ -9,6 +9,9 @@ type BubbleState = 'idle' | 'recording' | 'transcribing'
 const state = ref<BubbleState>('idle')
 const isVisible = ref(false)
 
+// Platform capability - whether drag is supported
+const supportsDrag = ref(true)
+
 // Drag state - simplified for native dragging
 const isDragging = ref(false)
 const dragStart = ref({ x: 0, y: 0 })
@@ -31,6 +34,14 @@ let unlistenState: (() => void) | null = null
 let unlistenHide: (() => void) | null = null
 
 onMounted(async () => {
+  // Check if drag is supported on this platform
+  try {
+    supportsDrag.value = await invoke<boolean>('bubble_supports_drag')
+  }
+  catch {
+    supportsDrag.value = true // Default to true on error
+  }
+
   // Listen for state changes from Rust
   unlistenState = await listen<BubbleState>('bubble-state', (event) => {
     state.value = event.payload
@@ -49,6 +60,12 @@ onUnmounted(() => {
 })
 
 function handleMouseDown(e: MouseEvent) {
+  // On Wayland, clicking just toggles recording (no drag support)
+  if (!supportsDrag.value) {
+    invoke('bubble_toggle_recording')
+    return
+  }
+
   isDragging.value = true
   hasMoved.value = false
   dragStart.value = { x: e.screenX, y: e.screenY }

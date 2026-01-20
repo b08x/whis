@@ -14,16 +14,12 @@ const BUBBLE_OFFSET: f64 = 50.0;
 
 /// Create the bubble overlay window (hidden by default)
 pub fn create_bubble_window(app: &AppHandle) -> Result<(), String> {
-    // Calculate initial position (will be updated when shown)
-    let (x, y) = calculate_bubble_position(app).unwrap_or((100.0, 100.0));
-
     let window = WebviewWindowBuilder::new(
         app,
         "bubble",
         WebviewUrl::App("src/bubble/index.html".into()),
     )
     .title("Whis Bubble")
-    .position(x, y)
     .inner_size(BUBBLE_SIZE, BUBBLE_SIZE)
     .resizable(false)
     .decorations(false)
@@ -35,19 +31,36 @@ pub fn create_bubble_window(app: &AppHandle) -> Result<(), String> {
     .build()
     .map_err(|e| e.to_string())?;
 
-    // Note: Do NOT call gtk_window.set_titlebar(None) here - it breaks window
-    // positioning on Wayland. Transparency works via .transparent(true) alone.
-    let _ = window;
+    #[cfg(target_os = "linux")]
+    {
+        // On Wayland (when positioning is not supported), remove invisible titlebar
+        // geometry so the compositor can properly center the window.
+        // This aligns the window's geometric center with its visual center.
+        if !whis_core::platform::supports_window_positioning() {
+            use gtk::prelude::GtkWindowExt;
+            if let Ok(gtk_window) = window.gtk_window() {
+                gtk_window.set_titlebar(Option::<&gtk::Widget>::None);
+            }
+        }
+    }
+
+    // Only set position on platforms that support it.
+    // On Wayland, let the compositor place the window naturally (centered).
+    if whis_core::platform::supports_window_positioning() {
+        let (x, y) = calculate_bubble_position(app).unwrap_or((100, 100));
+        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
+    }
 
     Ok(())
 }
 
-/// Calculate bubble position based on settings.
+/// Calculate bubble position in physical pixels.
 ///
-/// # Custom Position
+/// Uses custom_position if set (from user dragging), otherwise defaults to
+/// bottom-center of the primary monitor's work area.
 ///
-/// If the user has dragged the bubble to a custom position, that position
-/// is used. Otherwise, defaults to bottom-center of the work area.
+/// Returns physical pixel coordinates to avoid precision loss with fractional
+/// scaling factors (1.25x, 1.5x) that can cause off-center positioning.
 ///
 /// # Known Limitation (Linux/Dev Mode)
 ///
@@ -61,30 +74,33 @@ pub fn create_bubble_window(app: &AppHandle) -> Result<(), String> {
 /// Related Tauri issues:
 /// - <https://github.com/tauri-apps/tauri/issues/7376> (Linux positioning)
 /// - <https://github.com/tauri-apps/tauri/issues/12411> (Wayland limitations)
-pub fn calculate_bubble_position(app: &AppHandle) -> Result<(f64, f64), String> {
+pub fn calculate_bubble_position(app: &AppHandle) -> Result<(i32, i32), String> {
     let state = app.state::<AppState>();
-
-    // Use custom position if set by user dragging
-    if let Some((x, y)) = state.with_settings(|s| s.ui.bubble.custom_position) {
-        return Ok((x, y));
-    }
+    let custom_position = state.with_settings(|s| s.ui.bubble.custom_position);
 
     let monitor = app
         .primary_monitor()
         .map_err(|e| e.to_string())?
         .ok_or("No primary monitor")?;
 
-    // Use work_area instead of size - respects taskbars/panels
-    let work_area = monitor.work_area();
     let scale = monitor.scale_factor();
-    let work_area_width = work_area.size.width as f64 / scale;
-    let work_area_height = work_area.size.height as f64 / scale;
-    let work_area_x = work_area.position.x as f64 / scale;
-    let work_area_y = work_area.position.y as f64 / scale;
 
-    // Default to bottom-center position
-    let x = work_area_x + (work_area_width - BUBBLE_SIZE) / 2.0;
-    let y = work_area_y + work_area_height - BUBBLE_SIZE - BUBBLE_OFFSET;
+    // Only use custom_position on platforms that support dragging
+    if whis_core::platform::supports_window_positioning()
+        && let Some((x, y)) = custom_position
+    {
+        // custom_position is stored in logical, convert to physical
+        return Ok(((x * scale) as i32, (y * scale) as i32));
+    }
+
+    // Work area is already in physical pixels
+    let work_area = monitor.work_area();
+    let bubble_physical = (BUBBLE_SIZE * scale) as i32;
+    let offset_physical = (BUBBLE_OFFSET * scale) as i32;
+
+    // Calculate in physical pixels (no precision loss)
+    let x = work_area.position.x + (work_area.size.width as i32 - bubble_physical) / 2;
+    let y = work_area.position.y + work_area.size.height as i32 - bubble_physical - offset_physical;
 
     Ok((x, y))
 }

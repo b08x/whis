@@ -83,6 +83,25 @@ pub fn is_flatpak() -> bool {
     std::env::var("FLATPAK_ID").is_ok() || std::path::Path::new("/.flatpak-info").exists()
 }
 
+/// Check if programmatic window positioning is supported.
+/// Returns false for pure Wayland where compositors ignore set_position().
+pub fn supports_window_positioning() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        let is_wayland = std::env::var("WAYLAND_DISPLAY").is_ok();
+        if !is_wayland {
+            return true; // X11 always supports positioning
+        }
+        // On Wayland, only XWayland (non-Flatpak) supports positioning
+        // Flatpak sandbox prevents XWayland from working reliably
+        !is_flatpak() && std::env::var("DISPLAY").is_ok()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        true // macOS and Windows support positioning
+    }
+}
+
 /// Detect the current platform, compositor, and portal version
 pub fn detect_platform() -> PlatformInfo {
     #[cfg(target_os = "macos")]

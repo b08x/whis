@@ -265,6 +265,7 @@ async function copyConfigPath() {
 
 // Bubble settings
 const bubbleEnabled = computed(() => settingsStore.state.ui.bubble.enabled)
+const bubbleSupportsDrag = computed(() => settingsStore.state.bubbleSupportsDrag)
 
 function handleBubbleEnabledChange(value: boolean) {
   settingsStore.setBubbleEnabled(value)
@@ -417,6 +418,11 @@ function handleOllamaKeepAliveChange(value: string | null) {
               @update:model-value="handleBubbleEnabledChange"
             />
           </div>
+
+          <p v-if="!bubbleSupportsDrag && bubbleEnabled" class="env-hint">
+            <span class="hint-marker">[i]</span>
+            On Wayland, indicator position stays centered
+          </p>
         </div>
 
         <!-- Performance Section (only when local mode or Ollama enabled) -->
@@ -843,5 +849,17 @@ function handleOllamaKeepAliveChange(value: string | null) {
   flex-direction: column;
   gap: 12px;
   padding-top: 12px;
+}
+
+/* Environment hint (Wayland bubble info) */
+.env-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-weak);
+}
+
+.hint-marker {
+  color: var(--text-weak);
+  opacity: 0.7;
 }
 </style>

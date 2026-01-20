@@ -152,6 +152,7 @@ pub fn run(start_in_tray: bool) {
             commands::bubble_get_position,
             commands::bubble_move_by,
             commands::bubble_save_position,
+            commands::bubble_supports_drag,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
