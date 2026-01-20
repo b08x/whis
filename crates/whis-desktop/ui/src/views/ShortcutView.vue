@@ -82,12 +82,7 @@ const environmentHint = computed(() => {
 // Tab definitions
 const tabs = computed(() => [
   { id: 'system', title: 'System Shortcut', description: 'Configure in settings' },
-  {
-    id: 'direct',
-    title: 'Direct Capture',
-    description: 'Built-in capture',
-    badge: directCaptureWorking.value ? '✓' : undefined,
-  },
+  { id: 'direct', title: 'Direct Capture', description: 'Built-in capture' },
 ])
 
 onMounted(async () => {
@@ -206,11 +201,6 @@ async function openKeyboardSettings() {
 
           <template #direct>
             <template v-if="directCaptureWorking">
-              <div class="success-badge">
-                <span class="success-icon">✓</span>
-                <span>Direct capture active</span>
-              </div>
-
               <div class="field">
                 <label>press to record</label>
                 <ShortcutInput v-model="currentShortcut" />
@@ -278,23 +268,6 @@ async function openKeyboardSettings() {
 </template>
 
 <style scoped>
-/* Success badge */
-.success-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  background: hsla(120, 60%, 45%, 0.1);
-  border: 1px solid hsla(120, 60%, 45%, 0.2);
-  border-radius: 4px;
-  font-size: 12px;
-  color: hsl(120, 60%, 55%);
-}
-
-.success-icon {
-  font-size: 11px;
-}
-
 /* Field */
 .field {
   display: flex;
