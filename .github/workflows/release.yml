@@ -248,6 +248,19 @@ jobs:
           name: whis-desktop-rpm
           path: target/release/bundle/rpm/*.rpm
 
+      - name: Package raw binary for Flatpak
+        run: |
+          mkdir -p dist-flatpak
+          cp target/release/whis-desktop dist-flatpak/
+          cd dist-flatpak
+          tar -czvf whis-desktop-${{ needs.prepare.outputs.version_tag }}-x86_64-unknown-linux-gnu.tar.gz whis-desktop
+
+      - name: Upload raw binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: whis-desktop-binary-x86_64
+          path: dist-flatpak/whis-desktop-*.tar.gz
+
   build-desktop-windows:
     name: "Desktop: Windows"
     needs: [prepare]
@@ -407,6 +420,19 @@ jobs:
           name: whis-desktop-rpm-arm64
           path: target/release/bundle/rpm/*.rpm
 
+      - name: Package raw binary for Flatpak
+        run: |
+          mkdir -p dist-flatpak
+          cp target/release/whis-desktop dist-flatpak/
+          cd dist-flatpak
+          tar -czvf whis-desktop-${{ needs.prepare.outputs.version_tag }}-aarch64-unknown-linux-gnu.tar.gz whis-desktop
+
+      - name: Upload raw binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: whis-desktop-binary-aarch64
+          path: dist-flatpak/whis-desktop-*.tar.gz
+
   build-mobile-android:
     name: "Mobile: Android (Alpha)"
     needs: [prepare]
@@ -483,6 +509,20 @@ jobs:
 
       - name: Display artifacts
         run: find artifacts -type f
+
+      - name: Delete existing release assets (prevent accumulation on re-runs)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get release ID if it exists
+          RELEASE_ID=$(gh api repos/${{ github.repository }}/releases/tags/${{ needs.prepare.outputs.version_tag }} --jq '.id' 2>/dev/null || echo "")
+          if [ -n "$RELEASE_ID" ]; then
+            echo "Found existing release $RELEASE_ID, deleting assets..."
+            gh api repos/${{ github.repository }}/releases/$RELEASE_ID/assets --jq '.[].id' | while read ASSET_ID; do
+              echo "Deleting asset $ASSET_ID"
+              gh api -X DELETE repos/${{ github.repository }}/releases/assets/$ASSET_ID
+            done
+          fi
 
       - name: Generate release notes
         env:
