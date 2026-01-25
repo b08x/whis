@@ -41,8 +41,8 @@ use crate::hotkey::HotkeyEvent;
 use crate::ipc::{IpcMessage, IpcResponse, IpcServer};
 use std::time::Duration;
 use whis_core::{
-    AudioRecorder, DEFAULT_POST_PROCESSING_PROMPT, Settings, TranscriptionProvider,
-    copy_to_clipboard, post_process,
+    AudioRecorder, PostProcessor, Preset, Settings, TranscriptionProvider, copy_to_clipboard,
+    post_process, resolve_post_processor_config,
 };
 
 // Type aliases to reduce complexity warnings
@@ -65,10 +65,11 @@ pub struct Service {
     api_key: String,
     language: Option<String>,
     recording_counter: Arc<Mutex<u32>>,
+    preset: Option<Preset>,
 }
 
 impl Service {
-    pub fn new(config: TranscriptionConfig) -> Result<Self> {
+    pub fn new(config: TranscriptionConfig, preset: Option<Preset>) -> Result<Self> {
         Ok(Self {
             state: Arc::new(Mutex::new(ServiceState::Idle)),
             recorder: Arc::new(Mutex::new(None)),
@@ -78,6 +79,7 @@ impl Service {
             api_key: config.api_key,
             language: config.language,
             recording_counter: Arc::new(Mutex::new(0)),
+            preset,
         })
     }
 
@@ -115,23 +117,23 @@ impl Service {
             }
 
             // Check for hotkey events
-            if let Some(ref rx) = hotkey_rx {
-                if let Ok(event) = rx.try_recv() {
-                    if push_to_talk {
-                        // Push-to-talk mode: press starts, release stops
-                        match event {
-                            HotkeyEvent::Pressed => {
-                                self.handle_start().await;
-                            }
-                            HotkeyEvent::Released => {
-                                self.handle_stop().await;
-                            }
+            if let Some(ref rx) = hotkey_rx
+                && let Ok(event) = rx.try_recv()
+            {
+                if push_to_talk {
+                    // Push-to-talk mode: press starts, release stops
+                    match event {
+                        HotkeyEvent::Pressed => {
+                            self.handle_start().await;
                         }
-                    } else {
-                        // Toggle mode: only respond to press events
-                        if event == HotkeyEvent::Pressed {
-                            self.handle_toggle().await;
+                        HotkeyEvent::Released => {
+                            self.handle_stop().await;
                         }
+                    }
+                } else {
+                    // Toggle mode: only respond to press events
+                    if event == HotkeyEvent::Pressed {
+                        self.handle_toggle().await;
                     }
                 }
             }
@@ -414,40 +416,47 @@ impl Service {
             .await
             .context("Failed to join transcription task")??;
 
-        // Print completion message immediately after transcription finishes
-        println!("#{count} Done.");
-
-        // Apply post-processing if enabled
+        // Apply post-processing if enabled or preset is provided
         let settings = Settings::load();
-        let final_text = if settings.post_processing.enabled {
-            if let Some(post_processor_api_key) = settings
-                .post_processing
-                .api_key(&settings.transcription.api_keys)
-            {
-                println!("#{count} Post-processing...");
+        let final_text = if settings.post_processing.enabled || self.preset.is_some() {
+            match resolve_post_processor_config(&self.preset, &settings) {
+                Ok((processor, api_key, model, prompt)) => {
+                    // Re-warm Ollama model if needed
+                    if processor == PostProcessor::Ollama && model.is_some() {
+                        settings.services.ollama.preload();
+                        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                    }
 
-                let prompt = settings
-                    .post_processing
-                    .prompt
-                    .as_deref()
-                    .unwrap_or(DEFAULT_POST_PROCESSING_PROMPT);
+                    println!("#{count} Post-processing...");
 
-                match post_process(
-                    &post_processor_api_key,
-                    &settings.post_processing.processor,
-                    &transcription,
-                    prompt,
-                    None,
-                )
-                .await
-                {
-                    Ok(processed) => processed,
-                    Err(_) => transcription, // Silently fallback in service mode
+                    match post_process(
+                        &transcription,
+                        &processor,
+                        &api_key,
+                        &prompt,
+                        model.as_deref(),
+                    )
+                    .await
+                    {
+                        Ok(processed) => {
+                            println!("#{count} Done.");
+                            processed
+                        }
+                        Err(e) => {
+                            eprintln!("#{count} Post-processing failed: {e}");
+                            println!("#{count} Done.");
+                            transcription
+                        }
+                    }
                 }
-            } else {
-                transcription
+                Err(e) => {
+                    eprintln!("#{count} Post-processing config error: {e}");
+                    println!("#{count} Done.");
+                    transcription
+                }
             }
         } else {
+            println!("#{count} Done.");
             transcription
         };
 

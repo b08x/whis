@@ -130,13 +130,21 @@ pub struct Cli {
 #[allow(clippy::large_enum_variant)]
 pub enum Commands {
     /// Start the background service (uses shortcut_mode from settings)
-    Start,
+    Start {
+        /// Output preset for transcript (run 'whis preset list' to see all)
+        #[arg(long = "as", value_name = "PRESET")]
+        preset: Option<String>,
+    },
 
     /// Stop the background service
     Stop,
 
     /// Restart the background service
-    Restart,
+    Restart {
+        /// Output preset for transcript (run 'whis preset list' to see all)
+        #[arg(long = "as", value_name = "PRESET")]
+        preset: Option<String>,
+    },
 
     /// Check service status
     Status,

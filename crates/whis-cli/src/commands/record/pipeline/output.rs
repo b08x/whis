@@ -148,7 +148,7 @@ pub fn output(
             let settings = Settings::load();
             copy_to_clipboard(&formatted, settings.ui.clipboard_backend)?;
             if !quiet && io::stdout().is_terminal() {
-                println!("Copied to clipboard!");
+                eprintln!("Copied to clipboard!");
             }
         }
     }
