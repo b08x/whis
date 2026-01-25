@@ -1,7 +1,7 @@
 use crate::ipc;
 use anyhow::Result;
 
-pub fn run(preset_name: Option<String>) -> Result<()> {
+pub fn run(autotype: bool, preset_name: Option<String>) -> Result<()> {
     // Stop the service if running
     if ipc::is_service_running() {
         let mut client = ipc::IpcClient::connect()?;
@@ -12,6 +12,6 @@ pub fn run(preset_name: Option<String>) -> Result<()> {
         std::thread::sleep(std::time::Duration::from_millis(200));
     }
 
-    // Start the service with optional preset
-    crate::commands::start::run(false, preset_name)
+    // Start the service with optional preset and autotype override
+    crate::commands::start::run(autotype, preset_name)
 }
