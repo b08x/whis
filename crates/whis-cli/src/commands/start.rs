@@ -3,8 +3,9 @@ use anyhow::Result;
 use whis_core::Settings;
 use whis_core::autotyping::OutputMethod;
 use whis_core::settings::CliShortcutMode;
+use whis_core::{Preset, resolve_post_processor_config};
 
-pub fn run(autotype: bool) -> Result<()> {
+pub fn run(autotype: bool, preset_name: Option<String>) -> Result<()> {
     // Check if service is already running
     if ipc::is_service_running() {
         eprintln!("Error: whis service is already running.");
@@ -22,6 +23,17 @@ pub fn run(autotype: bool) -> Result<()> {
         None
     };
     let config = app::load_transcription_config()?;
+
+    // Load preset if specified
+    let preset = preset_name
+        .map(|name| Preset::load(&name).map(|(p, _source)| p))
+        .transpose()
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+    // Validate post-processing configuration early (catches missing Ollama model, etc.)
+    if preset.is_some() || settings.post_processing.enabled {
+        resolve_post_processor_config(&preset, &settings)?;
+    }
 
     // Create Tokio runtime
     let runtime = tokio::runtime::Runtime::new()?;
@@ -53,7 +65,8 @@ pub fn run(autotype: bool) -> Result<()> {
                     }
 
                     runtime.block_on(async {
-                        let service = service::Service::new(config, output_method_override)?;
+                        let service =
+                            service::Service::new(config, preset, output_method_override)?;
                         tokio::select! {
                             result = service.run(Some(hotkey_rx), push_to_talk) => result,
                             _ = tokio::signal::ctrl_c() => {
@@ -87,7 +100,7 @@ pub fn run(autotype: bool) -> Result<()> {
             );
 
             runtime.block_on(async {
-                let service = service::Service::new(config, output_method_override)?;
+                let service = service::Service::new(config, preset, output_method_override)?;
                 tokio::select! {
                     result = service.run(None, false) => result,
                     _ = tokio::signal::ctrl_c() => {

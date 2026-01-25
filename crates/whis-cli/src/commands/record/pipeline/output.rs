@@ -171,10 +171,10 @@ pub fn output(
 
             if !quiet && io::stdout().is_terminal() {
                 match settings.ui.output_method {
-                    OutputMethod::Clipboard => println!("Copied to clipboard!"),
-                    OutputMethod::Autotype => println!("Autotyped to active window!"),
+                    OutputMethod::Clipboard => eprintln!("Copied to clipboard!"),
+                    OutputMethod::Autotype => eprintln!("Autotyped to active window!"),
                     OutputMethod::Both => {
-                        println!("Copied to clipboard and autotyped to active window!")
+                        eprintln!("Copied to clipboard and autotyped to active window!")
                     }
                 }
             }

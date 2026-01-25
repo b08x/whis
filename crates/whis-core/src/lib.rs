@@ -42,7 +42,7 @@ pub use transcription::progressive_transcribe_local;
 pub use transcription::{
     DEFAULT_POST_PROCESSING_PROMPT, PostProcessConfig, PostProcessor, WarmupConfig,
     clear_warmup_cache, post_process, preload_ollama, progressive_transcribe_cloud,
-    warmup_configured,
+    resolve_post_processor_config, warmup_configured,
 };
 
 // Re-export provider types
@@ -107,6 +107,7 @@ pub mod preset {
 pub mod post_processing {
     pub use crate::transcription::{
         DEFAULT_POST_PROCESSING_PROMPT, PostProcessConfig, PostProcessor, post_process,
+        resolve_post_processor_config,
     };
 }
 
