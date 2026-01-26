@@ -104,7 +104,7 @@ impl Service {
         // This respects the user's model_memory settings for speed vs memory tradeoff
         #[cfg(feature = "local-transcription")]
         {
-            let settings = whis_core::Settings::load();
+            let settings = whis_core::Settings::load_cli();
             let keep_loaded = settings.ui.model_memory.keep_model_loaded;
             self.provider.set_keep_loaded(keep_loaded);
         }
@@ -287,7 +287,7 @@ impl Service {
         let mut recorder = AudioRecorder::new()?;
 
         // Configure VAD from settings
-        let settings = Settings::load();
+        let settings = Settings::load_cli();
         #[cfg(feature = "vad")]
         {
             recorder.set_vad(settings.ui.vad.enabled, settings.ui.vad.threshold);
@@ -341,7 +341,7 @@ impl Service {
             #[cfg(feature = "local-transcription")]
             if provider == TranscriptionProvider::LocalParakeet {
                 // Local Parakeet progressive transcription
-                let model_path = Settings::load()
+                let model_path = Settings::load_cli()
                     .transcription
                     .parakeet_model_path()
                     .ok_or_else(|| anyhow::anyhow!("Parakeet model path not configured"))?;
@@ -427,7 +427,7 @@ impl Service {
             .context("Failed to join transcription task")??;
 
         // Apply post-processing if enabled or preset is provided
-        let settings = Settings::load();
+        let settings = Settings::load_cli();
         let final_text = if settings.post_processing.enabled || self.preset.is_some() {
             match resolve_post_processor_config(&self.preset, &settings) {
                 Ok((processor, api_key, model, prompt)) => {
